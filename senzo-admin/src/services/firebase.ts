@@ -17,12 +17,12 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 
 // Same Firebase config as main project
 const firebaseConfig = {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyCDp68ub2aX4D4LAYsFX4WudGh4DB4OPDc",
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "senzo-crypto.firebaseapp.com",
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "senzo-crypto",
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "senzo-crypto.firebasestorage.app",
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "658358167868",
-    appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:658358167868:web:298608e1db7fdf60609639"
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID
 }
 
 const app = initializeApp(firebaseConfig)
