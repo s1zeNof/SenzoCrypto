@@ -24,7 +24,7 @@ export default function DailyTrades() {
     const loadTrades = async () => {
         if (!user || !date) return
         setLoading(true)
-        const data = await getTradesForDate(user.uid, new Date(date))
+        const data = await getTradesForDate(user.id, new Date(date))
         setTrades(data)
         setLoading(false)
     }
@@ -47,7 +47,7 @@ export default function DailyTrades() {
         if (!oldTrade) return
 
         try {
-            await updateTradeAndPortfolio(user.uid, tradeId, oldTrade, editForm)
+            await updateTradeAndPortfolio(user.id, tradeId, oldTrade, editForm)
             setEditingTradeId(null)
             loadTrades() // Reload to see updates
         } catch (error) {
@@ -59,7 +59,7 @@ export default function DailyTrades() {
         if (!user) return
         if (window.confirm('Ви впевнені, що хочете видалити цю угоду?')) {
             try {
-                await deleteTrade(user.uid, tradeId)
+                await deleteTrade(user.id, tradeId)
                 loadTrades()
             } catch (error) {
                 console.error('Failed to delete trade:', error)

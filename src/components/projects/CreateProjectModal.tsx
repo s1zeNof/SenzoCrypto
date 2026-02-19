@@ -29,7 +29,7 @@ export default function CreateProjectModal({ isOpen, onClose, onProjectCreated }
         setLoading(true)
         try {
             await ProjectService.createProject({
-                userId: user.uid,
+                userId: user.id,
                 title: formData.title,
                 description: formData.description,
                 startAmount: Number(formData.startAmount),

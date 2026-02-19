@@ -23,7 +23,7 @@ export default function TradeListModal({ isOpen, onClose, date, trades, onTradeD
         if (!user || !tradeId) return
         if (window.confirm('Ви впевнені, що хочете видалити цю угоду?')) {
             try {
-                await deleteTrade(user.uid, tradeId)
+                await deleteTrade(user.id, tradeId)
                 onTradeDeleted()
             } catch (error) {
                 console.error('Failed to delete trade:', error)

@@ -29,7 +29,7 @@ export default function PortfolioManager() {
     const loadPortfolios = async () => {
         if (!user) return
         setLoading(true)
-        const data = await getUserPortfolios(user.uid)
+        const data = await getUserPortfolios(user.id)
         setPortfolios(data)
         setLoading(false)
     }
@@ -40,14 +40,14 @@ export default function PortfolioManager() {
         if (portfolios.find(p => p.exchange === exchange && p.type === 'spot')) return
 
         const newPortfolio: Portfolio = {
-            userId: user.uid,
+            userId: user.id,
             exchange,
             type: 'spot',
             assets: [],
             updatedAt: new Date()
         }
 
-        await savePortfolio(user.uid, newPortfolio)
+        await savePortfolio(user.id, newPortfolio)
         loadPortfolios()
         setSelectedExchange(exchange)
     }
@@ -97,7 +97,7 @@ export default function PortfolioManager() {
             updatedAssets = [...portfolio.assets, newAsset]
         }
 
-        await savePortfolio(user.uid, { ...portfolio, assets: updatedAssets })
+        await savePortfolio(user.id, { ...portfolio, assets: updatedAssets })
 
         setShowAddAsset(false)
         setSelectedCoin(null)
@@ -139,7 +139,7 @@ export default function PortfolioManager() {
             return asset
         })
 
-        await savePortfolio(user.uid, { ...portfolio, assets: updatedAssets })
+        await savePortfolio(user.id, { ...portfolio, assets: updatedAssets })
 
         setShowAddAsset(false)
         setEditingAsset(null)
@@ -155,7 +155,7 @@ export default function PortfolioManager() {
         if (!portfolio) return
 
         const updatedAssets = portfolio.assets.filter(a => a.symbol !== symbol)
-        await savePortfolio(user.uid, { ...portfolio, assets: updatedAssets })
+        await savePortfolio(user.id, { ...portfolio, assets: updatedAssets })
         loadPortfolios()
     }
 

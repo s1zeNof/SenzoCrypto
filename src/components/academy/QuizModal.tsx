@@ -70,7 +70,7 @@ export default function QuizModal({ isOpen, onClose, postContent, postId, postTi
 
         setSaving(true)
         try {
-            await saveQuizResult(user.uid, postId, finalScore)
+            await saveQuizResult(user.id, postId, finalScore)
         } catch (error) {
             console.error('Failed to save quiz result:', error)
         } finally {

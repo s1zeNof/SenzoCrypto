@@ -17,7 +17,7 @@ export default function Projects() {
         if (!user) return
         try {
             setError(null)
-            const data = await ProjectService.getUserProjects(user.uid)
+            const data = await ProjectService.getUserProjects(user.id)
             setProjects(data)
         } catch (error: any) {
             console.error('Failed to fetch projects:', error)

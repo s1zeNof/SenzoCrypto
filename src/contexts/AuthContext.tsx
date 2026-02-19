@@ -1,7 +1,15 @@
+/**
+ * AuthContext.tsx — MIGRATED TO SUPABASE
+ */
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { User } from 'firebase/auth'
-import { doc, updateDoc } from 'firebase/firestore'
-import { onAuthChange, getUserData, updateUserProfile as firebaseUpdateProfile, UserData, db } from '@/services/firebase'
+import type { User } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase'
+import {
+    onAuthChange,
+    getUserData,
+    updateUserProfile as firebaseUpdateProfile,
+    UserData,
+} from '@/services/firebase'
 
 interface AuthContextType {
     user: User | null
@@ -29,16 +37,16 @@ const AuthContext = createContext<AuthContextType>({
 export const useAuth = () => useContext(AuthContext)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-    const [user, setUser] = useState<User | null>(null)
+    const [user, setUser]         = useState<User | null>(null)
     const [userData, setUserData] = useState<UserData | null>(null)
-    const [loading, setLoading] = useState(true)
+    const [loading, setLoading]   = useState(true)
 
     useEffect(() => {
-        const unsubscribe = onAuthChange(async (firebaseUser) => {
-            setUser(firebaseUser)
+        const unsubscribe = onAuthChange(async (supabaseUser) => {
+            setUser(supabaseUser)
 
-            if (firebaseUser) {
-                const data = await getUserData(firebaseUser.uid)
+            if (supabaseUser) {
+                const data = await getUserData(supabaseUser.id)
                 setUserData(data)
             } else {
                 setUserData(null)
@@ -53,18 +61,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const toggleSavePost = async (postId: string) => {
         if (!user || !userData) return
 
-        const currentSaved = userData.savedPosts || []
-        const isSaved = currentSaved.includes(postId)
-        const newSaved = isSaved
+        const currentSaved = userData.savedPosts ?? userData.saved_posts ?? []
+        const isSaved      = currentSaved.includes(postId)
+        const newSaved     = isSaved
             ? currentSaved.filter(id => id !== postId)
             : [...currentSaved, postId]
 
-        setUserData({ ...userData, savedPosts: newSaved })
+        // Optimistic update
+        setUserData({ ...userData, savedPosts: newSaved, saved_posts: newSaved })
 
         try {
-            await updateDoc(doc(db, 'users', user.uid), { savedPosts: newSaved })
-        } catch (error) {
-            console.error('Error toggling saved post:', error)
+            const { error } = await supabase
+                .from('user_profiles')
+                .update({ saved_posts: newSaved })
+                .eq('id', user.id)
+
+            if (error) {
+                console.error('toggleSavePost error:', error)
+                setUserData(userData)
+            }
+        } catch (e) {
+            console.error('toggleSavePost error:', e)
             setUserData(userData)
         }
     }
@@ -72,17 +89,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const updatePrivacySettings = async (settings: Partial<UserData['privacy']>) => {
         if (!user || !userData) return
 
-        const currentPrivacy = userData.privacy || {
-            showPnL: true, showPortfolio: true, showSavedPosts: true, isPublic: true
+        const currentPrivacy = userData.privacy ?? {
+            showPnL: true, showPortfolio: true, showSavedPosts: true, isPublic: true,
         }
         const newPrivacy = { ...currentPrivacy, ...settings }
 
         setUserData({ ...userData, privacy: newPrivacy })
 
         try {
-            await updateDoc(doc(db, 'users', user.uid), { privacy: newPrivacy })
-        } catch (error) {
-            console.error('Error updating privacy settings:', error)
+            const { error } = await supabase
+                .from('user_profiles')
+                .update({ privacy: newPrivacy })
+                .eq('id', user.id)
+
+            if (error) {
+                console.error('updatePrivacySettings error:', error)
+                setUserData(userData)
+            }
+        } catch (e) {
+            console.error('updatePrivacySettings error:', e)
             setUserData(userData)
         }
     }
@@ -95,21 +120,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }): Promise<{ success: boolean; error?: string }> => {
         if (!user || !userData) return { success: false, error: 'Не авторизований' }
 
-        const result = await firebaseUpdateProfile(user.uid, updates)
+        const result = await firebaseUpdateProfile(user.id, updates)
 
         if (result.success) {
-            // Build updated displayName
-            const first = updates.firstName ?? userData.firstName ?? ''
-            const last = updates.lastName ?? userData.lastName ?? ''
+            const first = updates.firstName ?? userData.firstName ?? userData.first_name ?? ''
+            const last  = updates.lastName  ?? userData.lastName  ?? userData.last_name  ?? ''
             const displayName = (updates.firstName !== undefined || updates.lastName !== undefined)
                 ? `${first} ${last}`.trim()
-                : userData.displayName
+                : (userData.displayName ?? userData.display_name)
 
-            // Optimistic update in context
             setUserData({
                 ...userData,
                 ...updates,
                 displayName,
+                display_name: displayName ?? null,
+                firstName:  updates.firstName ?? userData.firstName,
+                first_name: updates.firstName ?? userData.first_name,
+                lastName:   updates.lastName  ?? userData.lastName,
+                last_name:  updates.lastName  ?? userData.last_name,
+                photoURL:   updates.photoURL  !== undefined ? updates.photoURL  : userData.photoURL,
+                photo_url:  updates.photoURL  !== undefined ? updates.photoURL  : userData.photo_url,
+                username:   updates.username  ?? userData.username,
             })
         }
 
@@ -119,7 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return (
         <AuthContext.Provider value={{
             user, userData, loading,
-            toggleSavePost, updatePrivacySettings, updateProfile
+            toggleSavePost, updatePrivacySettings, updateProfile,
         }}>
             {children}
         </AuthContext.Provider>

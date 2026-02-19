@@ -1,7 +1,9 @@
+/**
+ * MIGRATED TO SUPABASE — replaces Firebase signInWithEmailAndPassword / signInWithPopup
+ */
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth'
-import { auth } from '../services/firebase'
+import { supabase } from '../lib/supabase'
 import { toast } from 'sonner'
 import { LogIn, Mail, Lock } from 'lucide-react'
 
@@ -16,7 +18,8 @@ export default function Login() {
         setLoading(true)
 
         try {
-            await signInWithEmailAndPassword(auth, email, password)
+            const { error } = await supabase.auth.signInWithPassword({ email, password })
+            if (error) throw error
             toast.success('Успішний вхід!')
             navigate('/posts')
         } catch (error: any) {
@@ -29,13 +32,14 @@ export default function Login() {
     const handleGoogleLogin = async () => {
         setLoading(true)
         try {
-            const provider = new GoogleAuthProvider()
-            await signInWithPopup(auth, provider)
-            toast.success('Успішний вхід!')
-            navigate('/posts')
+            const { error } = await supabase.auth.signInWithOAuth({
+                provider: 'google',
+                options: { redirectTo: window.location.origin + '/posts' },
+            })
+            if (error) throw error
+            // OAuth redirects — navigate() not needed here
         } catch (error: any) {
             toast.error('Помилка входу: ' + error.message)
-        } finally {
             setLoading(false)
         }
     }

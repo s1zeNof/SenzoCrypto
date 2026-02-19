@@ -3,8 +3,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Navigate, Link, useSearchParams } from 'react-router-dom'
 import { User, Settings, TrendingUp, Wallet, Lock, Globe, Eye, EyeOff, Bookmark, Clock, LineChart, Copy, Check, Search, Plus, X, Calculator, Trophy, XCircle } from 'lucide-react'
 import { getPostBySlug, type Post } from '@/services/posts'
-import { collection, query, where, getDocs, documentId, doc, updateDoc } from 'firebase/firestore'
-import { db, getUserTrades, getUserPortfolios, removeMasteredPost, type Trade, type Portfolio } from '@/services/firebase'
+import { supabase } from '@/lib/supabase'
+import { getUserTrades, getUserPortfolios, removeMasteredPost, type Trade, type Portfolio } from '@/services/firebase'
 import { formatDate } from '@/lib/utils'
 import { searchCoins, type CoinSearchResult } from '@/services/cryptoApi'
 import * as Tabs from '@radix-ui/react-tabs'
@@ -57,13 +57,13 @@ export default function Profile() {
 
   const loadTrades = async () => {
     if (!user) return
-    const data = await getUserTrades(user.uid)
+    const data = await getUserTrades(user.id)
     setTrades(data)
   }
 
   const loadPortfolios = async () => {
     if (!user) return
-    const data = await getUserPortfolios(user.uid)
+    const data = await getUserPortfolios(user.id)
     setPortfolios(data)
   }
 
@@ -71,11 +71,12 @@ export default function Profile() {
     if (!userData?.savedPosts || userData.savedPosts.length === 0) return
     setLoadingPosts(true)
     try {
-      const postsRef = collection(db, 'posts')
-      const q = query(postsRef, where(documentId(), 'in', userData.savedPosts.slice(0, 10)))
-      const snapshot = await getDocs(q)
-      const posts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post))
-      setSavedPostsList(posts)
+      const { data } = await supabase
+        .from('posts')
+        .select('*')
+        .in('id', userData.savedPosts.slice(0, 10))
+        .eq('status', 'published')
+      setSavedPostsList((data ?? []) as Post[])
     } catch (error) {
       console.error('Error loading saved posts:', error)
     } finally {
@@ -86,11 +87,12 @@ export default function Profile() {
   const loadMasteredPosts = async () => {
     if (!userData?.masteredPosts || userData.masteredPosts.length === 0) return
     try {
-      const postsRef = collection(db, 'posts')
-      const q = query(postsRef, where(documentId(), 'in', userData.masteredPosts.slice(0, 10)))
-      const snapshot = await getDocs(q)
-      const posts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post))
-      setMasteredPostsList(posts)
+      const { data } = await supabase
+        .from('posts')
+        .select('*')
+        .in('id', userData.masteredPosts.slice(0, 10))
+        .eq('status', 'published')
+      setMasteredPostsList((data ?? []) as Post[])
     } catch (error) {
       console.error('Error loading mastered posts:', error)
     }
@@ -99,10 +101,8 @@ export default function Profile() {
   const handleRemoveMastered = async (postId: string) => {
     if (!user) return
     try {
-      await removeMasteredPost(user.uid, postId)
-      // Refresh the list
+      await removeMasteredPost(user.id, postId)
       setMasteredPostsList(prev => prev.filter(p => p.id !== postId))
-      // Update the user context by reloading user data
       window.location.reload()
     } catch (error) {
       console.error('Error removing mastered post:', error)
@@ -111,7 +111,7 @@ export default function Profile() {
   }
 
   const copyReferralLink = () => {
-    const link = `${window.location.origin}/auth/register?ref=${userData?.uid?.slice(0, 8)}`
+    const link = `${window.location.origin}/auth/register?ref=${user?.id?.slice(0, 8)}`
     navigator.clipboard.writeText(link)
     setReferralCopied(true)
     setTimeout(() => setReferralCopied(false), 2000)
@@ -171,10 +171,13 @@ export default function Profile() {
     if (currentCoins.includes(coinId) || currentCoins.length >= 10) return
 
     const updatedCoins = [...currentCoins, coinId]
-    await updateDoc(doc(db, 'users', user.uid), { tickerCoins: updatedCoins })
+    await supabase
+      .from('user_profiles')
+      .update({ ticker_coins: updatedCoins })
+      .eq('id', user.id)
     setTickerSearchQuery('')
     setTickerSearchResults([])
-    window.location.reload() // Simple reload to refresh context/ticker
+    window.location.reload()
   }
 
   const removeTickerCoin = async (coinId: string) => {
@@ -183,7 +186,10 @@ export default function Profile() {
     if (currentCoins.length <= 1) return // Min 1 coin
 
     const updatedCoins = currentCoins.filter(id => id !== coinId)
-    await updateDoc(doc(db, 'users', user.uid), { tickerCoins: updatedCoins })
+    await supabase
+      .from('user_profiles')
+      .update({ ticker_coins: updatedCoins })
+      .eq('id', user.id)
     window.location.reload()
   }
 
@@ -231,7 +237,7 @@ export default function Profile() {
                 <div className="flex flex-wrap justify-center md:justify-start gap-4 text-sm text-gray-500">
                   <div className="flex items-center gap-2">
                     <Clock className="w-4 h-4" />
-                    Приєднався {userData?.createdAt ? formatDate(userData.createdAt.toDate()) : 'Недавно'}
+                    Приєднався {userData?.createdAt ? formatDate(new Date(userData.createdAt)) : 'Недавно'}
                   </div>
                   <div className="flex items-center gap-2">
                     <Globe className="w-4 h-4" />
@@ -249,7 +255,7 @@ export default function Profile() {
                 <div className="flex gap-2">
                   <input
                     readOnly
-                    value={`${window.location.origin}/auth/register?ref=${userData?.uid?.slice(0, 8)}`}
+                    value={`${window.location.origin}/auth/register?ref=${user?.id?.slice(0, 8)}`}
                     className="flex-1 bg-black/20 border border-border rounded px-2 py-1 text-xs text-gray-400 truncate"
                   />
                   <button

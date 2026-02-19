@@ -1,88 +1,160 @@
-// Firebase configuration and initialization
-import { initializeApp } from 'firebase/app'
-import {
-    getAuth,
-    createUserWithEmailAndPassword,
-    signInWithEmailAndPassword,
-    signInWithPopup,
-    GoogleAuthProvider,
-    GithubAuthProvider,
-    signOut,
-    onAuthStateChanged,
-    updateProfile,
-    type User
-} from 'firebase/auth'
-import {
-    getFirestore,
-    doc,
-    setDoc,
-    getDoc,
-    serverTimestamp,
-    collection,
-    query,
-    getDocs,
-    addDoc,
-    orderBy,
-    where,
-    deleteDoc,
-    updateDoc
-} from 'firebase/firestore'
-import { getStorage } from 'firebase/storage'
+/**
+ * firebase.ts — MIGRATED TO SUPABASE
+ *
+ * This file keeps its name so that all existing imports (26+ files)
+ * continue working without modification.
+ *
+ * Firebase → Supabase mapping:
+ *   Firebase Auth          → Supabase Auth
+ *   Firestore              → Supabase (PostgreSQL via REST)
+ *   Firebase Storage       → Supabase Storage
+ */
 
-// Firebase configuration
-// TODO: Replace with your Firebase config from Firebase Console
-const firebaseConfig = {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "your-api-key",
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "your-project.firebaseapp.com",
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "your-project-id",
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "your-project.appspot.com",
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "123456789",
-    appId: import.meta.env.VITE_FIREBASE_APP_ID || "your-app-id"
-}
+import { supabase } from '@/lib/supabase'
+import type { User, Session } from '@supabase/supabase-js'
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig)
-export const auth = getAuth(app)
-export const db = getFirestore(app)
-export const storage = getStorage(app)
+// Re-export supabase instance as `db` and `auth` for legacy imports
+export { supabase as db, supabase as auth, supabase as storage }
 
-// Auth Providers
-const googleProvider = new GoogleAuthProvider()
-const githubProvider = new GithubAuthProvider()
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-// User data interface
+export type { User, Session }
+
 export interface UserData {
-    uid: string
+    id: string
+    uid: string          // alias for id — kept for backward compat
     email: string | null
-    displayName: string | null
+    display_name: string | null
+    displayName: string | null   // alias
     username?: string
-    firstName?: string
-    lastName?: string
-    photoURL?: string | null
-    createdAt: any
-    savedPosts?: string[]
-    masteredPosts?: string[]
-    pnl?: {
-        daily: number
-        total: number
-        history: { date: string; value: number }[]
-    }
-    portfolio?: {
-        totalValue: number
-        assets: { symbol: string; amount: number; value: number }[]
-    }
-    privacy?: {
-        showPnL: boolean
-        showPortfolio: boolean
-        showSavedPosts: boolean
-        isPublic: boolean
-    }
+    first_name?: string
+    firstName?: string           // alias
+    last_name?: string
+    lastName?: string            // alias
+    photo_url?: string | null
+    photoURL?: string | null     // alias
+    created_at?: string
+    createdAt?: any              // alias
+    saved_posts?: string[]
+    savedPosts?: string[]        // alias
+    mastered_posts?: string[]
+    masteredPosts?: string[]     // alias
+    pnl?: { daily: number; total: number; history: { date: string; value: number }[] }
+    privacy?: { showPnL: boolean; showPortfolio: boolean; showSavedPosts: boolean; isPublic: boolean }
+    referral_code?: string
     referralCode?: string
+    invited_count?: number
     invitedCount?: number
-    tickerCoins?: string[] // Array of coin IDs
+    ticker_coins?: string[]
+    tickerCoins?: string[]
+    xp?: { trader: number; web3: number }
+    plan?: 'free' | 'premium'
 }
 
-// Register with email and password
+export interface PortfolioAsset {
+    coinId: string
+    symbol: string
+    name: string
+    amount: number
+    avgPrice: number
+    currentPrice?: number
+    image?: string
+}
+
+export interface Portfolio {
+    id?: string
+    userId: string
+    user_id?: string
+    exchange: string
+    type: 'spot' | 'futures'
+    assets: PortfolioAsset[]
+    updatedAt?: any
+    updated_at?: string
+}
+
+export interface Trade {
+    id?: string
+    userId: string
+    user_id?: string
+    date: any
+    exchange: string
+    pair: string
+    type: 'spot' | 'futures'
+    side: 'long' | 'short'
+    pnl: number
+    notes?: string
+    createdAt?: any
+    created_at?: string
+}
+
+export interface BacktestTrade {
+    id?: string
+    userId: string
+    user_id?: string
+    strategyName: string
+    strategy_name?: string
+    pair: string
+    timeframe: string
+    side: 'long' | 'short'
+    entryPrice: number
+    entry_price?: number
+    exitPrice: number
+    exit_price?: number
+    stopLoss?: number
+    stop_loss?: number
+    takeProfit?: number
+    take_profit?: number
+    size: number
+    pnl: number
+    rMultiple: number
+    r_multiple?: number
+    status: 'win' | 'loss' | 'breakeven'
+    entryTime: Date
+    entry_time?: string
+    exitTime: Date
+    exit_time?: string
+    notes?: string
+    createdAt?: any
+    created_at?: string
+}
+
+// ─── Helper — normalise a Supabase user_profiles row to UserData ─────────────
+
+function normaliseUser(row: any): UserData {
+    return {
+        id:          row.id,
+        uid:         row.id,
+        email:       row.email ?? null,
+        display_name:  row.display_name ?? null,
+        displayName:   row.display_name ?? null,
+        username:      row.username,
+        first_name:    row.first_name,
+        firstName:     row.first_name,
+        last_name:     row.last_name,
+        lastName:      row.last_name,
+        photo_url:     row.photo_url,
+        photoURL:      row.photo_url,
+        created_at:    row.created_at,
+        createdAt:     row.created_at,
+        saved_posts:   row.saved_posts   ?? [],
+        savedPosts:    row.saved_posts   ?? [],
+        mastered_posts: row.mastered_posts ?? [],
+        masteredPosts:  row.mastered_posts ?? [],
+        pnl:           row.pnl,
+        privacy:       row.privacy,
+        referral_code: row.referral_code,
+        referralCode:  row.referral_code,
+        invited_count: row.invited_count,
+        invitedCount:  row.invited_count,
+        ticker_coins:  row.ticker_coins  ?? [],
+        tickerCoins:   row.ticker_coins  ?? [],
+        xp:            row.xp,
+        plan:          row.plan ?? 'free',
+    }
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
 export const registerWithEmail = async (
     email: string,
     password: string,
@@ -91,120 +163,97 @@ export const registerWithEmail = async (
     username: string
 ) => {
     try {
-        // Create user account
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password)
-        const user = userCredential.user
-
-        // Update profile with display name
-        const displayName = `${firstName} ${lastName}`
-        await updateProfile(user, { displayName })
-
-        // Save additional user data to Firestore
-        await setDoc(doc(db, 'users', user.uid), {
-            uid: user.uid,
-            email: user.email,
-            displayName,
-            firstName,
-            lastName,
-            username,
-            photoURL: user.photoURL,
-            createdAt: serverTimestamp(),
+        const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+                data: {
+                    first_name:   firstName,
+                    last_name:    lastName,
+                    username,
+                    display_name: `${firstName} ${lastName}`.trim(),
+                },
+            },
         })
 
-        return { user, error: null }
-    } catch (error: any) {
-        console.error('Registration error:', error)
-        return { user: null, error: error.message }
+        if (error) return { user: null, error: error.message }
+
+        // Profile row is created automatically by DB trigger (see SQL schema)
+        return { user: data.user, error: null }
+    } catch (e: any) {
+        return { user: null, error: e.message }
     }
 }
 
-// Login with email and password
 export const loginWithEmail = async (email: string, password: string) => {
     try {
-        const userCredential = await signInWithEmailAndPassword(auth, email, password)
-        return { user: userCredential.user, error: null }
-    } catch (error: any) {
-        console.error('Login error:', error)
-        return { user: null, error: error.message }
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+        if (error) return { user: null, error: error.message }
+        return { user: data.user, error: null }
+    } catch (e: any) {
+        return { user: null, error: e.message }
     }
 }
 
-// Login with Google
 export const loginWithGoogle = async () => {
     try {
-        const result = await signInWithPopup(auth, googleProvider)
-        const user = result.user
-
-        // Check if user document exists, if not create one
-        const userDoc = await getDoc(doc(db, 'users', user.uid))
-        if (!userDoc.exists()) {
-            await setDoc(doc(db, 'users', user.uid), {
-                uid: user.uid,
-                email: user.email,
-                displayName: user.displayName,
-                photoURL: user.photoURL,
-                createdAt: serverTimestamp(),
-            })
-        }
-
-        return { user, error: null }
-    } catch (error: any) {
-        console.error('Google login error:', error)
-        return { user: null, error: error.message }
+        const { data, error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: { redirectTo: `${window.location.origin}/app/dashboard` },
+        })
+        if (error) return { user: null, error: error.message }
+        return { user: data as any, error: null }
+    } catch (e: any) {
+        return { user: null, error: e.message }
     }
 }
 
-// Login with GitHub
 export const loginWithGithub = async () => {
     try {
-        const result = await signInWithPopup(auth, githubProvider)
-        const user = result.user
-
-        // Check if user document exists, if not create one
-        const userDoc = await getDoc(doc(db, 'users', user.uid))
-        if (!userDoc.exists()) {
-            await setDoc(doc(db, 'users', user.uid), {
-                uid: user.uid,
-                email: user.email,
-                displayName: user.displayName,
-                photoURL: user.photoURL,
-                createdAt: serverTimestamp(),
-            })
-        }
-
-        return { user, error: null }
-    } catch (error: any) {
-        console.error('GitHub login error:', error)
-        return { user: null, error: error.message }
+        const { data, error } = await supabase.auth.signInWithOAuth({
+            provider: 'github',
+            options: { redirectTo: `${window.location.origin}/app/dashboard` },
+        })
+        if (error) return { user: null, error: error.message }
+        return { user: data as any, error: null }
+    } catch (e: any) {
+        return { user: null, error: e.message }
     }
 }
 
-// Logout
 export const logout = async () => {
     try {
-        await signOut(auth)
-        return { error: null }
-    } catch (error: any) {
-        console.error('Logout error:', error)
-        return { error: error.message }
+        const { error } = await supabase.auth.signOut()
+        return { error: error?.message ?? null }
+    } catch (e: any) {
+        return { error: e.message }
     }
 }
 
-// Get current user data from Firestore
+export const onAuthChange = (callback: (user: User | null) => void) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        callback(session?.user ?? null)
+    })
+    return () => subscription.unsubscribe()
+}
+
+// ─── User Profile ─────────────────────────────────────────────────────────────
+
 export const getUserData = async (uid: string): Promise<UserData | null> => {
     try {
-        const userDoc = await getDoc(doc(db, 'users', uid))
-        if (userDoc.exists()) {
-            return userDoc.data() as UserData
-        }
-        return null
-    } catch (error) {
-        console.error('Get user data error:', error)
+        const { data, error } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .eq('id', uid)
+            .single()
+
+        if (error || !data) return null
+        return normaliseUser(data)
+    } catch {
         return null
     }
 }
 
-// Update user profile (displayName, firstName, lastName, username, photoURL)
 export const updateUserProfile = async (
     uid: string,
     updates: {
@@ -215,310 +264,327 @@ export const updateUserProfile = async (
     }
 ): Promise<{ success: boolean; error?: string }> => {
     try {
-        const userRef = doc(db, 'users', uid)
+        const patch: Record<string, any> = {}
+        if (updates.firstName  !== undefined) patch.first_name   = updates.firstName
+        if (updates.lastName   !== undefined) patch.last_name    = updates.lastName
+        if (updates.username   !== undefined) patch.username     = updates.username
+        if (updates.photoURL   !== undefined) patch.photo_url    = updates.photoURL
 
-        const firestoreUpdates: Record<string, any> = {}
-        if (updates.firstName !== undefined) firestoreUpdates.firstName = updates.firstName
-        if (updates.lastName !== undefined) firestoreUpdates.lastName = updates.lastName
-        if (updates.username !== undefined) firestoreUpdates.username = updates.username
-        if (updates.photoURL !== undefined) firestoreUpdates.photoURL = updates.photoURL
-
-        // Build displayName if names changed
         if (updates.firstName !== undefined || updates.lastName !== undefined) {
-            // We need current data to fill in missing parts
-            const snap = await getDoc(userRef)
-            const cur = snap.data() as UserData | undefined
-            const first = updates.firstName ?? cur?.firstName ?? ''
-            const last = updates.lastName ?? cur?.lastName ?? ''
-            firestoreUpdates.displayName = `${first} ${last}`.trim()
+            const { data: cur } = await supabase
+                .from('user_profiles').select('first_name,last_name').eq('id', uid).single()
+            const first = updates.firstName ?? cur?.first_name ?? ''
+            const last  = updates.lastName  ?? cur?.last_name  ?? ''
+            patch.display_name = `${first} ${last}`.trim()
         }
 
-        await updateDoc(userRef, firestoreUpdates)
+        const { error } = await supabase
+            .from('user_profiles')
+            .update(patch)
+            .eq('id', uid)
 
-        // Also update Firebase Auth profile display name
-        // Note: photoURL is NOT sent to Firebase Auth because it stores base64 data
-        // which exceeds Firebase Auth's URL length limit. It's stored in Firestore only.
-        const currentUser = auth.currentUser
-        if (currentUser && firestoreUpdates.displayName) {
-            await updateProfile(currentUser, { displayName: firestoreUpdates.displayName })
-        }
-
+        if (error) return { success: false, error: error.message }
         return { success: true }
-    } catch (error: any) {
-        console.error('Update profile error:', error)
-        return { success: false, error: error.message || 'Помилка оновлення' }
+    } catch (e: any) {
+        return { success: false, error: e.message }
     }
 }
 
-// Auth state observer
-export const onAuthChange = (callback: (user: User | null) => void) => {
-    return onAuthStateChanged(auth, callback)
-}
+// ─── Portfolios ───────────────────────────────────────────────────────────────
 
-// Portfolio & Trade Types
-export interface PortfolioAsset {
-    coinId: string;
-    symbol: string;
-    name: string;
-    amount: number;
-    avgPrice: number;
-    currentPrice?: number; // Fetched from API, not stored
-    image?: string;
-}
-
-export interface Portfolio {
-    id?: string;
-    userId: string;
-    exchange: string; // e.g., 'Bybit', 'Binance'
-    type: 'spot' | 'futures';
-    assets: PortfolioAsset[];
-    updatedAt: any;
-}
-
-export interface Trade {
-    id?: string;
-    userId: string;
-    date: any; // Timestamp
-    exchange: string;
-    pair: string;
-    type: 'spot' | 'futures';
-    side: 'long' | 'short';
-    pnl: number; // In USDT
-    notes?: string;
-    createdAt: any;
-}
-
-// Portfolio Functions
 export const getUserPortfolios = async (userId: string): Promise<Portfolio[]> => {
     try {
-        const q = query(collection(db, 'users', userId, 'portfolios'));
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Portfolio));
-    } catch (error) {
-        console.error('Error getting portfolios:', error);
-        return [];
+        const { data, error } = await supabase
+            .from('portfolios')
+            .select('*')
+            .eq('user_id', userId)
+
+        if (error) return []
+        return (data ?? []).map(r => ({
+            id:        r.id,
+            userId:    r.user_id,
+            exchange:  r.exchange,
+            type:      r.type,
+            assets:    r.assets ?? [],
+            updatedAt: r.updated_at,
+        }))
+    } catch {
+        return []
     }
-};
+}
 
-export const savePortfolio = async (userId: string, portfolio: Portfolio) => {
-    try {
-        const portfolioRef = portfolio.id
-            ? doc(db, 'users', userId, 'portfolios', portfolio.id)
-            : doc(collection(db, 'users', userId, 'portfolios'));
-
-        const { id, ...data } = portfolio;
-        await setDoc(portfolioRef, {
-            ...data,
-            updatedAt: new Date()
-        }, { merge: true });
-
-        return portfolioRef.id;
-    } catch (error) {
-        console.error('Error saving portfolio:', error);
-        throw error;
+export const savePortfolio = async (userId: string, portfolio: Portfolio): Promise<string> => {
+    const payload = {
+        user_id:    userId,
+        exchange:   portfolio.exchange,
+        type:       portfolio.type,
+        assets:     portfolio.assets,
+        updated_at: new Date().toISOString(),
     }
-};
 
-// Trade Functions
+    if (portfolio.id) {
+        await supabase.from('portfolios').update(payload).eq('id', portfolio.id)
+        return portfolio.id
+    } else {
+        const { data } = await supabase.from('portfolios').insert(payload).select('id').single()
+        return data?.id ?? ''
+    }
+}
+
+// ─── Trades ───────────────────────────────────────────────────────────────────
+
 export const addTrade = async (userId: string, trade: Trade) => {
-    try {
-        const tradesRef = collection(db, 'users', userId, 'trades');
-        await addDoc(tradesRef, {
-            ...trade,
-            createdAt: new Date()
-        });
-    } catch (error) {
-        console.error('Error adding trade:', error);
-        throw error;
-    }
-};
-
-export const addTradeAndUpdatePortfolio = async (userId: string, trade: Trade) => {
-    try {
-        // 1. Add the trade record
-        await addTrade(userId, trade);
-
-        // 2. Find the portfolio for this exchange
-        const portfolios = await getUserPortfolios(userId);
-        const portfolio = portfolios.find(p => p.exchange === trade.exchange);
-
-        if (portfolio) {
-            // 3. Update USDT balance
-            const usdtAssetIndex = portfolio.assets.findIndex(a => a.symbol === 'USDT');
-            let updatedAssets = [...portfolio.assets];
-
-            if (usdtAssetIndex >= 0) {
-                // Update existing USDT
-                updatedAssets[usdtAssetIndex] = {
-                    ...updatedAssets[usdtAssetIndex],
-                    amount: updatedAssets[usdtAssetIndex].amount + trade.pnl
-                };
-            } else {
-                // Create new USDT asset if not exists
-                updatedAssets.push({
-                    coinId: 'tether',
-                    symbol: 'USDT',
-                    name: 'Tether',
-                    amount: trade.pnl,
-                    avgPrice: 1,
-                    image: 'https://assets.coingecko.com/coins/images/325/large/Tether.png'
-                });
-            }
-
-            // 4. Save portfolio
-            await savePortfolio(userId, {
-                ...portfolio,
-                assets: updatedAssets
-            });
-        }
-    } catch (error) {
-        console.error('Error adding trade and updating portfolio:', error);
-        throw error;
-    }
-};
+    await supabase.from('trades').insert({
+        user_id:    userId,
+        date:       trade.date instanceof Date ? trade.date.toISOString() : trade.date,
+        exchange:   trade.exchange,
+        pair:       trade.pair,
+        type:       trade.type,
+        side:       trade.side,
+        pnl:        trade.pnl,
+        notes:      trade.notes ?? null,
+        created_at: new Date().toISOString(),
+    })
+}
 
 export const getUserTrades = async (userId: string): Promise<Trade[]> => {
     try {
-        const q = query(collection(db, 'users', userId, 'trades'), orderBy('date', 'desc'));
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Trade));
-    } catch (error) {
-        console.error('Error getting trades:', error);
-        return [];
-    }
-};
+        const { data, error } = await supabase
+            .from('trades')
+            .select('*')
+            .eq('user_id', userId)
+            .order('date', { ascending: false })
 
-export const deleteTrade = async (userId: string, tradeId: string) => {
-    try {
-        await deleteDoc(doc(db, 'users', userId, 'trades', tradeId));
-    } catch (error) {
-        console.error('Error deleting trade:', error);
-        throw error;
+        if (error) return []
+        return (data ?? []).map(r => ({
+            id:       r.id,
+            userId:   r.user_id,
+            date:     r.date,
+            exchange: r.exchange,
+            pair:     r.pair,
+            type:     r.type,
+            side:     r.side,
+            pnl:      r.pnl,
+            notes:    r.notes,
+            createdAt: r.created_at,
+        }))
+    } catch {
+        return []
     }
-};
+}
 
 export const getTradesForDate = async (userId: string, date: Date): Promise<Trade[]> => {
     try {
-        // Start of day
-        const start = new Date(date);
-        start.setHours(0, 0, 0, 0);
+        const start = new Date(date); start.setHours(0, 0, 0, 0)
+        const end   = new Date(date); end.setHours(23, 59, 59, 999)
 
-        // End of day
-        const end = new Date(date);
-        end.setHours(23, 59, 59, 999);
+        const { data, error } = await supabase
+            .from('trades')
+            .select('*')
+            .eq('user_id', userId)
+            .gte('date', start.toISOString())
+            .lte('date', end.toISOString())
+            .order('date', { ascending: false })
 
-        const q = query(
-            collection(db, 'users', userId, 'trades'),
-            where('date', '>=', start),
-            where('date', '<=', end),
-            orderBy('date', 'desc')
-        );
-
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Trade));
-    } catch (error) {
-        console.error('Error getting trades for date:', error);
-        return [];
+        if (error) return []
+        return (data ?? []).map(r => ({
+            id: r.id, userId: r.user_id, date: r.date,
+            exchange: r.exchange, pair: r.pair, type: r.type,
+            side: r.side, pnl: r.pnl, notes: r.notes, createdAt: r.created_at,
+        }))
+    } catch {
+        return []
     }
-};
-
-export const updateTradeAndPortfolio = async (userId: string, tradeId: string, oldTrade: Trade, updates: Partial<Trade>) => {
-    try {
-        // 1. Update the trade record
-        const tradeRef = doc(db, 'users', userId, 'trades', tradeId);
-        await updateDoc(tradeRef, {
-            ...updates,
-            // If date is being updated, ensure it's a Timestamp or Date
-        });
-
-        // 2. If PnL changed, update portfolio balance
-        if (updates.pnl !== undefined && updates.pnl !== oldTrade.pnl) {
-            const pnlDiff = updates.pnl - oldTrade.pnl;
-
-            const portfolios = await getUserPortfolios(userId);
-            const portfolio = portfolios.find(p => p.exchange === oldTrade.exchange);
-
-            if (portfolio) {
-                const usdtAssetIndex = portfolio.assets.findIndex(a => a.symbol === 'USDT');
-                let updatedAssets = [...portfolio.assets];
-
-                if (usdtAssetIndex >= 0) {
-                    updatedAssets[usdtAssetIndex] = {
-                        ...updatedAssets[usdtAssetIndex],
-                        amount: updatedAssets[usdtAssetIndex].amount + pnlDiff
-                    };
-
-                    await savePortfolio(userId, {
-                        ...portfolio,
-                        assets: updatedAssets
-                    });
-                }
-            }
-        }
-    } catch (error) {
-        console.error('Error updating trade and portfolio:', error);
-        throw error;
-    }
-};
+}
 
 export const updateTrade = async (userId: string, tradeId: string, updates: Partial<Trade>) => {
-    try {
-        const tradeRef = doc(db, 'users', userId, 'trades', tradeId);
-        await updateDoc(tradeRef, {
-            ...updates,
-            // If date is being updated, ensure it's a Timestamp or Date
-        });
-    } catch (error) {
-        console.error('Error updating trade:', error);
-        throw error;
+    const patch: Record<string, any> = {}
+    if (updates.date     !== undefined) patch.date     = updates.date instanceof Date ? updates.date.toISOString() : updates.date
+    if (updates.exchange !== undefined) patch.exchange = updates.exchange
+    if (updates.pair     !== undefined) patch.pair     = updates.pair
+    if (updates.type     !== undefined) patch.type     = updates.type
+    if (updates.side     !== undefined) patch.side     = updates.side
+    if (updates.pnl      !== undefined) patch.pnl      = updates.pnl
+    if (updates.notes    !== undefined) patch.notes    = updates.notes
+
+    await supabase.from('trades').update(patch).eq('id', tradeId).eq('user_id', userId)
+}
+
+export const deleteTrade = async (userId: string, tradeId: string) => {
+    await supabase.from('trades').delete().eq('id', tradeId).eq('user_id', userId)
+}
+
+export const addTradeAndUpdatePortfolio = async (userId: string, trade: Trade) => {
+    await addTrade(userId, trade)
+    const portfolios = await getUserPortfolios(userId)
+    const portfolio  = portfolios.find(p => p.exchange === trade.exchange)
+
+    if (portfolio) {
+        const idx = portfolio.assets.findIndex(a => a.symbol === 'USDT')
+        const assets = [...portfolio.assets]
+        if (idx >= 0) {
+            assets[idx] = { ...assets[idx], amount: assets[idx].amount + trade.pnl }
+        } else {
+            assets.push({ coinId: 'tether', symbol: 'USDT', name: 'Tether', amount: trade.pnl, avgPrice: 1,
+                image: 'https://assets.coingecko.com/coins/images/325/large/Tether.png' })
+        }
+        await savePortfolio(userId, { ...portfolio, assets })
     }
-};
+}
+
+export const updateTradeAndPortfolio = async (
+    userId: string, tradeId: string, oldTrade: Trade, updates: Partial<Trade>
+) => {
+    await updateTrade(userId, tradeId, updates)
+    if (updates.pnl !== undefined && updates.pnl !== oldTrade.pnl) {
+        const diff = updates.pnl - oldTrade.pnl
+        const portfolios = await getUserPortfolios(userId)
+        const portfolio  = portfolios.find(p => p.exchange === oldTrade.exchange)
+        if (portfolio) {
+            const idx = portfolio.assets.findIndex(a => a.symbol === 'USDT')
+            if (idx >= 0) {
+                const assets = [...portfolio.assets]
+                assets[idx] = { ...assets[idx], amount: assets[idx].amount + diff }
+                await savePortfolio(userId, { ...portfolio, assets })
+            }
+        }
+    }
+}
+
+// ─── Backtest Trades ──────────────────────────────────────────────────────────
+
+export const addBacktestTrade = async (
+    userId: string,
+    trade: Omit<BacktestTrade, 'id' | 'createdAt' | 'created_at'>
+): Promise<string> => {
+    const { data, error } = await supabase.from('backtest_trades').insert({
+        user_id:       userId,
+        strategy_name: trade.strategyName,
+        pair:          trade.pair,
+        timeframe:     trade.timeframe,
+        side:          trade.side,
+        entry_price:   trade.entryPrice,
+        exit_price:    trade.exitPrice,
+        stop_loss:     trade.stopLoss ?? null,
+        take_profit:   trade.takeProfit ?? null,
+        size:          trade.size,
+        pnl:           trade.pnl,
+        r_multiple:    trade.rMultiple,
+        status:        trade.status,
+        entry_time:    trade.entryTime instanceof Date ? trade.entryTime.toISOString() : trade.entryTime,
+        exit_time:     trade.exitTime  instanceof Date ? trade.exitTime.toISOString()  : trade.exitTime,
+        notes:         trade.notes ?? null,
+        created_at:    new Date().toISOString(),
+    }).select('id').single()
+
+    if (error) { console.error(error); throw new Error(error.message) }
+    return data?.id ?? ''
+}
+
+export const getBacktestTrades = async (
+    userId: string,
+    strategyName?: string
+): Promise<BacktestTrade[]> => {
+    try {
+        let q = supabase
+            .from('backtest_trades')
+            .select('*')
+            .eq('user_id', userId)
+            .order('entry_time', { ascending: true })
+
+        if (strategyName) q = q.eq('strategy_name', strategyName)
+
+        const { data, error } = await q
+        if (error) return []
+
+        return (data ?? []).map(r => ({
+            id:           r.id,
+            userId:       r.user_id,
+            strategyName: r.strategy_name,
+            pair:         r.pair,
+            timeframe:    r.timeframe,
+            side:         r.side,
+            entryPrice:   r.entry_price,
+            exitPrice:    r.exit_price,
+            stopLoss:     r.stop_loss,
+            takeProfit:   r.take_profit,
+            size:         r.size,
+            pnl:          r.pnl,
+            rMultiple:    r.r_multiple,
+            status:       r.status,
+            entryTime:    new Date(r.entry_time),
+            exitTime:     new Date(r.exit_time),
+            notes:        r.notes,
+            createdAt:    r.created_at,
+        }))
+    } catch {
+        return []
+    }
+}
+
+export const deleteBacktestTrade = async (userId: string, tradeId: string) => {
+    await supabase.from('backtest_trades').delete().eq('id', tradeId).eq('user_id', userId)
+}
+
+export const updateBacktestTrade = async (
+    userId: string, tradeId: string, updates: Partial<BacktestTrade>
+) => {
+    const patch: Record<string, any> = {}
+    if (updates.strategyName !== undefined) patch.strategy_name = updates.strategyName
+    if (updates.pair         !== undefined) patch.pair          = updates.pair
+    if (updates.timeframe    !== undefined) patch.timeframe     = updates.timeframe
+    if (updates.side         !== undefined) patch.side          = updates.side
+    if (updates.entryPrice   !== undefined) patch.entry_price   = updates.entryPrice
+    if (updates.exitPrice    !== undefined) patch.exit_price    = updates.exitPrice
+    if (updates.stopLoss     !== undefined) patch.stop_loss     = updates.stopLoss
+    if (updates.takeProfit   !== undefined) patch.take_profit   = updates.takeProfit
+    if (updates.size         !== undefined) patch.size          = updates.size
+    if (updates.pnl          !== undefined) patch.pnl           = updates.pnl
+    if (updates.rMultiple    !== undefined) patch.r_multiple    = updates.rMultiple
+    if (updates.status       !== undefined) patch.status        = updates.status
+    if (updates.notes        !== undefined) patch.notes         = updates.notes
+
+    await supabase.from('backtest_trades').update(patch).eq('id', tradeId).eq('user_id', userId)
+}
+
+// ─── Quiz Results ─────────────────────────────────────────────────────────────
 
 export const saveQuizResult = async (userId: string, postId: string, score: number) => {
     try {
-        // 1. Save quiz result
-        const resultRef = collection(db, 'users', userId, 'quizResults');
-        await addDoc(resultRef, {
-            postId,
+        await supabase.from('quiz_results').insert({
+            user_id:    userId,
+            post_id:    postId,
             score,
-            passed: score >= 70, // 70% passing score
-            createdAt: new Date()
-        });
+            passed:     score >= 70,
+            created_at: new Date().toISOString(),
+        })
 
-        // 2. If passed, add to masteredPosts
         if (score >= 70) {
-            const userRef = doc(db, 'users', userId);
-            const userDoc = await getDoc(userRef);
-            if (userDoc.exists()) {
-                const userData = userDoc.data() as UserData;
-                const masteredPosts = userData.masteredPosts || [];
-                if (!masteredPosts.includes(postId)) {
-                    await updateDoc(userRef, {
-                        masteredPosts: [...masteredPosts, postId]
-                    });
-                }
+            const { data: profile } = await supabase
+                .from('user_profiles').select('mastered_posts').eq('id', userId).single()
+
+            const mastered = profile?.mastered_posts ?? []
+            if (!mastered.includes(postId)) {
+                await supabase.from('user_profiles')
+                    .update({ mastered_posts: [...mastered, postId] })
+                    .eq('id', userId)
             }
         }
-    } catch (error) {
-        console.error('Error saving quiz result:', error);
-        throw error;
+    } catch (e) {
+        console.error('saveQuizResult error:', e)
+        throw e
     }
-};
+}
 
-// Remove postId from mastered posts
 export const removeMasteredPost = async (userId: string, postId: string) => {
     try {
-        const userRef = doc(db, 'users', userId);
-        const userDoc = await getDoc(userRef);
-        if (userDoc.exists()) {
-            const userData = userDoc.data() as UserData;
-            const masteredPosts = userData.masteredPosts || [];
-            await updateDoc(userRef, {
-                masteredPosts: masteredPosts.filter(id => id !== postId)
-            });
-        }
-    } catch (error) {
-        console.error('Error removing mastered post:', error);
-        throw error;
+        const { data: profile } = await supabase
+            .from('user_profiles').select('mastered_posts').eq('id', userId).single()
+
+        const mastered = (profile?.mastered_posts ?? []).filter((id: string) => id !== postId)
+        await supabase.from('user_profiles').update({ mastered_posts: mastered }).eq('id', userId)
+    } catch (e) {
+        console.error('removeMasteredPost error:', e)
+        throw e
     }
-};
+}

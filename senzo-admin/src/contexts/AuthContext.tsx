@@ -1,7 +1,10 @@
+/**
+ * MIGRATED TO SUPABASE — replaces Firebase onAuthStateChanged
+ */
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { onAuthStateChanged, type User } from 'firebase/auth'
-import { auth } from '../services/firebase'
+import type { User } from '@supabase/supabase-js'
+import { supabase } from '../lib/supabase'
 
 interface AuthContextType {
     user: User | null
@@ -13,15 +16,23 @@ const AuthContext = createContext<AuthContextType>({ user: null, loading: true }
 export const useAuth = () => useContext(AuthContext)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-    const [user, setUser] = useState<User | null>(null)
+    const [user, setUser]       = useState<User | null>(null)
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
-            setUser(user)
+        // Hydrate from existing session on mount
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setUser(session?.user ?? null)
             setLoading(false)
         })
-        return unsubscribe
+
+        // Keep in sync with all Supabase auth events (sign in, sign out, token refresh)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setUser(session?.user ?? null)
+            setLoading(false)
+        })
+
+        return () => subscription.unsubscribe()
     }, [])
 
     return (

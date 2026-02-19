@@ -12,7 +12,8 @@ import {
     Scale,
     ArrowLeftRight,
     Target,
-    Users
+    Users,
+    FlaskConical
 } from 'lucide-react'
 import { useUI } from '@/store/ui'
 
@@ -26,6 +27,7 @@ const navItems = [
     { path: '/app/academy',    icon: GraduationCap,   label: 'Академія' },
     { path: '/app/projects',   icon: Target,          label: 'Мої проекти' },
     { path: '/app/simulator',  icon: Gamepad2,        label: 'Симулятор' },
+    { path: '/app/backtest',   icon: FlaskConical,    label: 'Бектест' },
     { path: '/app/community',  icon: Users,           label: 'Спільнота' },
     // Hidden for now — preserved for future use:
     // { path: '/app/docs',          icon: FileText, label: 'Документація' },

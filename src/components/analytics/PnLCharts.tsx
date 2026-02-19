@@ -30,7 +30,7 @@ export default function PnLCharts() {
 
     const loadTrades = async () => {
         if (!user) return
-        const data = await getUserTrades(user.uid)
+        const data = await getUserTrades(user.id)
         // Sort trades by date ascending
         const sorted = data.sort((a, b) => {
             const dateA = a.date.toDate ? a.date.toDate() : new Date(a.date)

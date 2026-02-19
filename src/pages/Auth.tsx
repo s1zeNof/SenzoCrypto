@@ -2,15 +2,7 @@ import { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { auth, googleProvider, db } from "@/lib/firebase"
-import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signInWithPopup,
-  onAuthStateChanged,
-  updateProfile,
-} from "firebase/auth"
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore"
+import { supabase } from "@/lib/supabase"
 import { Link, useNavigate } from "react-router-dom"
 import { cn } from "@/lib/utils"
 
@@ -105,10 +97,13 @@ export default function AuthPage() {
 
   // Redirect if already authed
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      if (u) nav("/learn")
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) nav("/learn")
     })
-    return () => unsub()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (session?.user) nav("/learn")
+    })
+    return () => subscription.unsubscribe()
   }, [nav])
 
   // Login form
@@ -125,45 +120,36 @@ export default function AuthPage() {
     formState: { errors: re, isSubmitting: rloading },
   } = useForm<RegisterForm>({ resolver: zodResolver(RegisterSchema) })
 
-  /** Create/merge user doc */
-  const upsertUserDoc = async (uid: string, patch: any) => {
-    const ref = doc(db, "users", uid)
-    const prev = await getDoc(ref)
-    await setDoc(
-      ref,
-      prev.exists()
-        ? { ...patch, updatedAt: serverTimestamp() }
-        : { plan: "free", createdAt: serverTimestamp(), ...patch },
-      { merge: true }
-    )
-  }
-
   const onLogin = async (v: LoginForm) => {
-    const cred = await signInWithEmailAndPassword(auth, v.email, v.password)
-    await upsertUserDoc(cred.user.uid, { email: v.email })
+    const { error } = await supabase.auth.signInWithPassword({ email: v.email, password: v.password })
+    if (error) throw error
     nav("/learn")
   }
 
   const onRegister = async (v: RegisterForm) => {
-    const cred = await createUserWithEmailAndPassword(auth, v.email, v.password)
-    if (v.displayName) await updateProfile(cred.user, { displayName: v.displayName })
-    await upsertUserDoc(cred.user.uid, {
+    const { data, error } = await supabase.auth.signUp({
       email: v.email,
-      displayName: v.displayName,
-      riskPercent: 1,
-      style: "day",
+      password: v.password,
+      options: { data: { full_name: v.displayName } },
     })
+    if (error) throw error
+    // Update display_name in user_profiles (trigger created the row already)
+    if (data.user) {
+      await supabase
+        .from("user_profiles")
+        .update({ display_name: v.displayName })
+        .eq("id", data.user.id)
+    }
     nav("/onboarding")
   }
 
   const loginGoogle = async () => {
-    const cred = await signInWithPopup(auth, googleProvider)
-    await upsertUserDoc(cred.user.uid, {
-      email: cred.user.email,
-      displayName: cred.user.displayName,
-      photoURL: cred.user.photoURL,
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin + "/learn" },
     })
-    nav("/learn")
+    if (error) throw error
+    // OAuth redirects the page — nav() not needed
   }
 
   return (

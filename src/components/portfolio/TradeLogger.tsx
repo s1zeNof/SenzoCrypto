@@ -25,7 +25,7 @@ export default function TradeLogger({ onTradeAdded }: { onTradeAdded: () => void
         setLoading(true)
         try {
             const trade: Trade = {
-                userId: user.uid,
+                userId: user.id,
                 exchange: formData.exchange,
                 pair: formData.pair.toUpperCase(),
                 type: formData.type as 'spot' | 'futures',
@@ -36,7 +36,7 @@ export default function TradeLogger({ onTradeAdded }: { onTradeAdded: () => void
                 createdAt: new Date()
             }
 
-            await addTradeAndUpdatePortfolio(user.uid, trade)
+            await addTradeAndUpdatePortfolio(user.id, trade)
             setFormData(prev => ({ ...prev, pair: '', pnl: '', notes: '' }))
             onTradeAdded()
         } catch (error) {
