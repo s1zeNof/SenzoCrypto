@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(python3:*)",
+      "Bash(node -e \"const fs=require\\(''fs''\\);const c=''import { Outlet, useLocation } from \"\"react-router-dom\"\"\\\\nimport Navbar from \"\"./Navbar\"\"\\\\nimport Sidebar from \"\"./Sidebar\"\"\\\\nimport { useUI } from \"\"@/store/ui\"\"\\\\n\\\\nexport default function MainLayout\\(\\) {\\\\n    const location = useLocation\\(\\)\\\\n    const isSimulator = location.pathname === \"\"/app/simulator\"\"\\\\n    const { sidebarMode } = useUI\\(\\)\\\\n    const mainMargin = sidebarMode === \"\"expanded\"\" ? \"\"ml-52\"\" : \"\"ml-16\"\"\\\\n    return \\(\\\\n        <div className=\"\"min-h-screen bg-background\"\">\\\\n            <Navbar />\\\\n            <div className=\"\"flex\"\">\\\\n                <Sidebar />\\\\n                <main className={[\"\"flex-1\"\",mainMargin,\"\"mt-16 transition-all duration-200 ease-in-out\"\",isSimulator?\"\"p-0 w-full max-w-full\"\":\"\"p-6 container-tight\"\"].join\\(\"\" \"\"\\)}>\\\\n                    <Outlet />\\\\n                </main>\\\\n            </div>\\\\n        </div>\\\\n    \\)\\\\n}\\\\n'';fs.writeFileSync\\(''src/components/layout/MainLayout.tsx'',c\\);console.log\\(''ok''\\)\")",
+      "Bash(node:*)",
+      "Bash(npx tsc:*)"
+    ]
+  }
+}

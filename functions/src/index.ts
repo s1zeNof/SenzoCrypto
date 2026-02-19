@@ -1,25 +1,42 @@
-import {setGlobalOptions} from "firebase-functions";
-import {onRequest} from "firebase-functions/https";
 import * as logger from "firebase-functions/logger";
+import {onRequest} from "firebase-functions/v2/https";
+import {GoogleGenerativeAI} from "@google/generative-ai";
 
-import * as functions from 'firebase-functions'
-import fetch from 'node-fetch'
-import cors from 'cors'
+// Ініціалізація Gemini API з вашим ключем
+const genAI = new GoogleGenerativeAI("AIzaSyDYwwYd9srPKzRZikYpd4qAaWjtmF_pX9Y");
 
-const corsHandler = cors({ origin: true })
+export const analyzeToken = onRequest({cors: true}, async (req, res) => {
+  if (req.method !== "POST") {
+    res.status(405).send("Method Not Allowed");
+    return;
+  }
 
-export const klines = functions.https.onRequest((req, res) => {
-  corsHandler(req, res, async () => {
-    try {
-      const { symbol = 'BTCUSDT', interval = '1h', limit = '750' } = req.query
-      const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
-      const r = await fetch(url)
-      if (!r.ok) return res.status(r.status).send(await r.text())
-      const data = await r.json()
-      res.set('Cache-Control', 'public, max-age=60') // 1 хв кеш
-      res.status(200).json(data)
-    } catch (e: any) {
-      res.status(500).json({ error: e?.message ?? 'unknown error' })
+  try {
+    const {tokenName, tokenTicker, candleData, userQuestion} = req.body;
+
+    if (!tokenName || !tokenTicker || !candleData || !userQuestion) {
+      res.status(400).send("Missing required fields");
+      return;
     }
-  })
-})
+
+    const model = genAI.getGenerativeModel({model: "gemini-pro"});
+
+    const prompt = `
+      You are a professional crypto trader and analyst. Your task is to analyze market data and provide clear, well-founded answers. Analyze the token ${tokenName} (${tokenTicker}).
+      Here is the recent candle data (Open, High, Low, Close): ${JSON.stringify(
+      candleData,
+    )}.
+      The user has asked the following question: '${userQuestion}'.
+      Provide your analysis, pointing out possible support/resistance levels, FVG, and other key elements on the chart.
+    `;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    res.status(200).send({analysis: text});
+  } catch (error) {
+    logger.error("Error analyzing token:", error);
+    res.status(500).send("Internal Server Error");
+  }
+});

@@ -1,3 +1,4 @@
+// src/data/statuses.ts
 export type StatusTier = {
   id: string
   level: number
@@ -52,3 +53,9 @@ export const WEB3_TIERS: StatusTier[] = [
   { id:"w19", level:19, xpFrom:18500,title:"Web3-гуру", emoji:"🌌", desc:"Глибокі інтеграції." },
   { id:"w20", level:20, xpFrom:20500,title:"Сенсей Web3", emoji:"🏆", desc:"Вершина квестів." },
 ]
+
+// --- ДОДАЙТЕ ЦЕЙ ЕКСПОРТ ---
+export const statuses = {
+  trader: TRADER_TIERS,
+  web3: WEB3_TIERS
+};

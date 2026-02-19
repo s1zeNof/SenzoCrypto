@@ -19,39 +19,39 @@ export function Header() {
             <Menu size={20} />
           </button>
         )}
-        
+
         <div className="hidden md:flex items-center gap-2">
           {/* Desktop Logo is in the Sidebar now */}
         </div>
 
         {/* Mobile Logo */}
         <Link to="/" className="font-semibold tracking-wide flex items-center gap-2 md:hidden">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-primary">
-              <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M2 17L12 22L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            <span>Senzo</span>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-primary">
+            <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M2 17L12 22L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span>Senzo</span>
         </Link>
 
         <div className="ml-auto flex items-center gap-3">
           {user ? (
             <div className="flex items-center gap-2">
               <button
-                onClick={()=>nav("/profile")}
+                onClick={() => nav("/profile")}
                 className="h-9 w-9 overflow-hidden rounded-full ring-1 ring-border hover:ring-primary/50 transition"
                 title="Профіль"
               >
                 {user.photoURL
                   ? <img src={user.photoURL} alt="User avatar" className="h-full w-full object-cover" />
-                  : <div className="flex h-full w-full items-center justify-center text-sm font-bold bg-muted">{(user.displayName||user.email||"U").slice(0,1).toUpperCase()}</div>}
+                  : <div className="flex h-full w-full items-center justify-center text-sm font-bold bg-muted">{(user.displayName || user.email || "U").slice(0, 1).toUpperCase()}</div>}
               </button>
-              <button onClick={()=>signOut(auth)} className="hidden md:block rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted/60">
+              <button onClick={() => signOut(auth)} className="hidden md:block rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted/60">
                 Вийти
               </button>
             </div>
           ) : (
-            <button onClick={()=>nav("/auth")} className="rounded-md border border-border bg-muted/60 px-3 py-1.5 text-sm hover:bg-muted">
+            <button onClick={() => nav("/auth")} className="rounded-md border border-border bg-muted/60 px-3 py-1.5 text-sm hover:bg-muted">
               Увійти
             </button>
           )}
