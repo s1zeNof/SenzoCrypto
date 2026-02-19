@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { Navigate, Link, useSearchParams } from 'react-router-dom'
 import { User, Settings, TrendingUp, Wallet, Lock, Globe, Eye, EyeOff, Bookmark, Clock, LineChart, Copy, Check, Search, Plus, X, Calculator, Trophy, XCircle } from 'lucide-react'
@@ -152,17 +152,21 @@ export default function Profile() {
     return Array.from(exchanges)
   }, [trades, portfolios])
 
-  // Ticker Settings Handlers
-  const handleTickerSearch = async (query: string) => {
+  // Ticker Settings Handlers — debounced to avoid CoinGecko rate limits
+  const tickerDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const handleTickerSearch = (query: string) => {
     setTickerSearchQuery(query)
     if (query.length < 2) {
       setTickerSearchResults([])
       return
     }
-    setTickerSearching(true)
-    const results = await searchCoins(query)
-    setTickerSearchResults(results)
-    setTickerSearching(false)
+    if (tickerDebounceRef.current) clearTimeout(tickerDebounceRef.current)
+    tickerDebounceRef.current = setTimeout(async () => {
+      setTickerSearching(true)
+      const results = await searchCoins(query)
+      setTickerSearchResults(results)
+      setTickerSearching(false)
+    }, 500) // wait 500ms after user stops typing
   }
 
   const addTickerCoin = async (coinId: string) => {
