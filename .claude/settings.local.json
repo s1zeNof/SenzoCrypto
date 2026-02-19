@@ -6,7 +6,15 @@
       "Bash(python3:*)",
       "Bash(node -e \"const fs=require\\(''fs''\\);const c=''import { Outlet, useLocation } from \"\"react-router-dom\"\"\\\\nimport Navbar from \"\"./Navbar\"\"\\\\nimport Sidebar from \"\"./Sidebar\"\"\\\\nimport { useUI } from \"\"@/store/ui\"\"\\\\n\\\\nexport default function MainLayout\\(\\) {\\\\n    const location = useLocation\\(\\)\\\\n    const isSimulator = location.pathname === \"\"/app/simulator\"\"\\\\n    const { sidebarMode } = useUI\\(\\)\\\\n    const mainMargin = sidebarMode === \"\"expanded\"\" ? \"\"ml-52\"\" : \"\"ml-16\"\"\\\\n    return \\(\\\\n        <div className=\"\"min-h-screen bg-background\"\">\\\\n            <Navbar />\\\\n            <div className=\"\"flex\"\">\\\\n                <Sidebar />\\\\n                <main className={[\"\"flex-1\"\",mainMargin,\"\"mt-16 transition-all duration-200 ease-in-out\"\",isSimulator?\"\"p-0 w-full max-w-full\"\":\"\"p-6 container-tight\"\"].join\\(\"\" \"\"\\)}>\\\\n                    <Outlet />\\\\n                </main>\\\\n            </div>\\\\n        </div>\\\\n    \\)\\\\n}\\\\n'';fs.writeFileSync\\(''src/components/layout/MainLayout.tsx'',c\\);console.log\\(''ok''\\)\")",
       "Bash(node:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(dir:*)",
+      "Bash(npx vite build)",
+      "Bash(npm install:*)",
+      "Bash(findstr:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm run build:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nmigrate: Firebase → Supabase \\(full migration\\)\n\n- Replace all Firebase Auth/Firestore/Storage with Supabase\n- Add Backtest page with chart replay and trade journal\n- Keep all filenames for backward compatibility\n- Update .env files to use VITE_SUPABASE_* vars\n- Remove firebase npm package from both projects\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push)"
     ]
   }
 }
