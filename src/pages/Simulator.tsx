@@ -333,6 +333,25 @@ export default function Simulator() {
     const isReplaySelectionModeRef = useRef(isReplaySelectionMode)
     useEffect(() => { isReplaySelectionModeRef.current = isReplaySelectionMode }, [isReplaySelectionMode])
 
+    // ── Fix: stop replay when timeframe OR symbol changes ──────────────────────
+    // Without this, fullDataRef inside ChartContainer gets overwritten with new
+    // interval's candles while replayIndexRef still points to the old index →
+    // nextCandle() returns wrong-interval data → chart breaks.
+    useEffect(() => {
+        if (!isReplayActive) return
+        // Stop the playback timer immediately
+        if (replayIntervalRef.current !== null) {
+            window.clearInterval(replayIntervalRef.current)
+            replayIntervalRef.current = null
+        }
+        // Reset all replay state
+        setIsReplayActive(false)
+        setIsReplaySelectionMode(false)
+        setIsReplayPaused(true)
+        // Tell ChartContainer to reset its refs and show full new data
+        replayApi?.stopReplay()
+    }, [interval, symbol]) // eslint-disable-line react-hooks/exhaustive-deps
+
     return (
         <div className="h-[calc(100vh-64px)] flex flex-col bg-background text-white overflow-hidden relative">
             {/* ... (Top Toolbar) ... */}

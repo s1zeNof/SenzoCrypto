@@ -129,56 +129,97 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
     useEffect(() => {
         if (!candleSeriesRef.current) return
 
-        // 1. Initial Fetch (REST API)
+        let cancelled = false
+
+        // ── 1. Paginated REST fetch: 3 pages × 1000 = 3000 candles ──────────────
+        // Binance max per request = 1000. We chain requests using `endTime`
+        // to fetch older history before the previous batch.
+        // Result by timeframe:
+        //   1m → ~2 days | 5m → ~10d | 15m → ~31d
+        //   1h → ~125d   | 4h → ~1.4yr | 1d → ~8yr
         const fetchData = async () => {
             try {
-                // Binance API: https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=1000
-                const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=1000`)
-                const data = await response.json()
+                const LIMIT = 1000
+                const PAGES = 3
+                let allCandles: { time: Time; open: number; high: number; low: number; close: number }[] = []
+                let endTime: number | undefined = undefined
 
-                const candles = data.map((d: any) => ({
-                    time: d[0] / 1000 as Time,
-                    open: parseFloat(d[1]),
-                    high: parseFloat(d[2]),
-                    low: parseFloat(d[3]),
-                    close: parseFloat(d[4]),
-                }))
+                for (let page = 0; page < PAGES; page++) {
+                    if (cancelled) return
 
-                fullDataRef.current = candles // Store full data for replay
+                    let url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${LIMIT}`
+                    if (endTime !== undefined) url += `&endTime=${endTime}`
+
+                    const response = await fetch(url)
+                    if (!response.ok || cancelled) break
+
+                    const data: any[] = await response.json()
+                    if (!data.length) break
+
+                    const candles = data.map((d: any) => ({
+                        time: d[0] / 1000 as Time,
+                        open:  parseFloat(d[1]),
+                        high:  parseFloat(d[2]),
+                        low:   parseFloat(d[3]),
+                        close: parseFloat(d[4]),
+                    }))
+
+                    // Prepend older candles before the current batch
+                    allCandles = [...candles, ...allCandles]
+                    // Next request: fetch candles ending just before the oldest candle
+                    endTime = data[0][0] - 1
+
+                    // If fewer than LIMIT returned, we've hit the start of history
+                    if (data.length < LIMIT) break
+                }
+
+                if (cancelled) return
+
+                // Sort by time (safety net) and deduplicate
+                allCandles.sort((a, b) => (a.time as number) - (b.time as number))
+                // Remove exact duplicates by time
+                const seen = new Set<number>()
+                allCandles = allCandles.filter(c => {
+                    const t = c.time as number
+                    if (seen.has(t)) return false
+                    seen.add(t)
+                    return true
+                })
+
+                fullDataRef.current = allCandles
+
                 if (!isReplayModeRef.current) {
-                    candleSeriesRef.current?.setData(candles)
-                    onDataUpdate?.(candles) // Expose data to parent
+                    candleSeriesRef.current?.setData(allCandles)
+                    onDataUpdate?.(allCandles)
                 }
             } catch (error) {
-                console.error('Error fetching Binance data:', error)
+                if (!cancelled) console.error('Error fetching Binance data:', error)
             }
         }
 
         fetchData()
 
-        // 2. WebSocket Connection (Real-time)
-        // Only connect if NOT in replay mode
+        // ── 2. WebSocket Connection (Real-time, skipped in replay) ───────────────
         if (isReplayModeRef.current) return
 
         const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@kline_${interval}`)
 
         ws.onmessage = (event) => {
-            if (isReplayModeRef.current) return // Ignore WS updates in replay mode
+            if (isReplayModeRef.current || cancelled) return
 
             const message = JSON.parse(event.data)
             const k = message.k
 
             const candle = {
-                time: k.t / 1000 as Time,
-                open: parseFloat(k.o),
-                high: parseFloat(k.h),
-                low: parseFloat(k.l),
+                time:  k.t / 1000 as Time,
+                open:  parseFloat(k.o),
+                high:  parseFloat(k.h),
+                low:   parseFloat(k.l),
                 close: parseFloat(k.c),
             }
 
             candleSeriesRef.current?.update(candle)
 
-            // Update fullDataRef as well so replay has latest data if started later
             const lastFull = fullDataRef.current[fullDataRef.current.length - 1]
             if (lastFull && lastFull.time === candle.time) {
                 fullDataRef.current[fullDataRef.current.length - 1] = candle
@@ -188,6 +229,7 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
         }
 
         return () => {
+            cancelled = true
             ws.close()
         }
 
