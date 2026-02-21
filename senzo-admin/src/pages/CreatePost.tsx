@@ -3,11 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { createPost, uploadImage } from '../services/firebase'
+import { supabase } from '../lib/supabase'
 import { generateSlug } from '../lib/utils'
 import RichTextEditor from '../components/RichTextEditor'
 import TagsInput from '../components/TagsInput'
 import { Save, Eye, Upload, X, Clock } from 'lucide-react'
-import { auth } from '../services/firebase'
 
 interface PostForm {
     title: string
@@ -80,7 +80,7 @@ export default function CreatePost() {
             return
         }
 
-        const user = auth.currentUser
+        const { data: { user } } = await supabase.auth.getUser()
         if (!user) {
             toast.error('Потрібно увійти в систему')
             return
@@ -95,8 +95,8 @@ export default function CreatePost() {
                 tags,
                 category: categories[0], // Use first category as main
                 author: {
-                    uid: user.uid,
-                    name: user.displayName || 'Admin',
+                    uid: user.id,
+                    name: user.user_metadata?.full_name || user.email || 'Admin',
                     email: user.email || '',
                 },
             })

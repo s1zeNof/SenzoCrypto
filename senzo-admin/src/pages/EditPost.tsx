@@ -3,8 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { updatePost, uploadImage, type Post } from '../services/firebase'
-import { doc, getDoc } from 'firebase/firestore'
-import { db } from '../services/firebase'
+import { supabase } from '../lib/supabase'
 import { generateSlug } from '../lib/utils'
 import RichTextEditor from '../components/RichTextEditor'
 import TagsInput from '../components/TagsInput'
@@ -41,24 +40,28 @@ export default function EditPost() {
         if (!id) return
 
         try {
-            const postRef = doc(db, 'posts', id)
-            const postSnap = await getDoc(postRef)
+            const { data, error } = await supabase
+                .from('posts')
+                .select('*')
+                .eq('id', id)
+                .single()
 
-            if (postSnap.exists()) {
-                const post = postSnap.data() as Post
-                setValue('title', post.title)
-                setValue('slug', post.slug)
-                setValue('excerpt', post.excerpt)
-                setValue('difficulty', post.difficulty)
-                setValue('status', post.status)
-                setContent(post.content)
-                setFeaturedImage(post.featuredImage || '')
-                setTags(post.tags || [])
-                setCategories([post.category])
-            } else {
+            if (error || !data) {
                 toast.error('Пост не знайдено')
                 navigate('/posts')
+                return
             }
+
+            const post = data as Post
+            setValue('title', post.title)
+            setValue('slug', post.slug)
+            setValue('excerpt', post.excerpt)
+            setValue('difficulty', post.difficulty)
+            setValue('status', post.status)
+            setContent(post.content)
+            setFeaturedImage(post.featured_image || '')
+            setTags(post.tags || [])
+            setCategories([post.category])
         } catch (error) {
             toast.error('Помилка завантаження посту')
         } finally {

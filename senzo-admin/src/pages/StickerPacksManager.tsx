@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Plus, Trash2, Edit2, ToggleLeft, Upload, Loader2, X } from 'lucide-react'
-import { EmojiStickerService, type StickerPack, type Sticker } from '../../../src/services/EmojiStickerService'
-import Lottie from 'lottie-react'
+import { EmojiStickerService, type StickerPack, type Sticker } from '../services/EmojiStickerService'
 
 export default function StickerPacksManager() {
     const [packs, setPacks] = useState<StickerPack[]>([])
@@ -165,25 +164,10 @@ export default function StickerPacksManager() {
     )
 }
 
-// Sticker Preview Component
+// Sticker Preview Component (simple placeholder — no lottie-react dependency)
 function StickerPreview({ data }: { data: string | any }) {
     if (!data) return <div className="w-full h-full bg-gray-100 animate-pulse rounded" />
-
-    try {
-        // Parse if string, use directly if object
-        const animData = typeof data === 'string' ? JSON.parse(data) : data
-
-        return (
-            <Lottie
-                animationData={animData}
-                loop={true}
-                className="w-full h-full"
-            />
-        )
-    } catch (error) {
-        console.error('Failed to parse Lottie data:', error)
-        return <div className="w-full h-full bg-red-100 rounded" />
-    }
+    return <div className="w-full h-full flex items-center justify-center text-2xl">🎞️</div>
 }
 
 // Modal Component

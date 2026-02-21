@@ -1,7 +1,6 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { FileText, Settings, LogOut, PlusCircle, Smile, Sticker } from 'lucide-react'
-import { signOut } from 'firebase/auth'
-import { auth } from '../services/firebase'
+import { supabase } from '../lib/supabase'
 import { toast } from 'sonner'
 
 export default function Layout() {
@@ -10,7 +9,7 @@ export default function Layout() {
 
     const handleLogout = async () => {
         try {
-            await signOut(auth)
+            await supabase.auth.signOut()
             toast.success('Вихід виконано')
             navigate('/login')
         } catch (error) {
