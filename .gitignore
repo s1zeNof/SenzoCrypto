@@ -3,6 +3,8 @@
 .env.*
 .firebase/
 firebase-debug.log
+firebase-service-account.json
+scripts/firebase-*-export.json
 
 # Білди
 dist/
