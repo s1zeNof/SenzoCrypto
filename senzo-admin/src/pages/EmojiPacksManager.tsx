@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Plus, Trash2, Edit2, ToggleLeft, Upload, Loader2, X } from 'lucide-react'
-import { EmojiStickerService, type EmojiPack, type Emoji } from '../../../src/services/EmojiStickerService'
+import { EmojiStickerService, type EmojiPack, type Emoji } from '../services/EmojiStickerService'
 
 export default function EmojiPacksManager() {
     const [packs, setPacks] = useState<EmojiPack[]>([])
