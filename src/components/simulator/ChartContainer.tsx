@@ -53,6 +53,9 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
             timeScale: {
                 timeVisible: true,
                 secondsVisible: false,
+                // Allow the user to scroll and draw past the last candle (into the future)
+                rightOffset: 20,
+                fixRightEdge: false,
             },
             crosshair: {
                 mode: 1, // Magnet mode
@@ -145,54 +148,65 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
 
         let cancelled = false
 
-        // ── 1. Full-history REST fetch ───────────────────────────────────────────
-        // Binance max per request = 1000. We chain backwards using `endTime`
-        // until we get fewer than LIMIT candles (= start of exchange data).
-        // Safety cap: MAX_PAGES × 1000 candles total.
-        //   1m   → cap at 30 000 (~20 days)
-        //   5m   → cap at 30 000 (~104 days)
-        //   15m  → cap at 30 000 (~312 days)
-        //   1h   → full BTC history ~70 000 candles (no cap hit)
-        //   4h   → full BTC history ~18 000 candles (no cap hit)
-        //   1d   → full BTC history ~3 000 candles  (no cap hit)
+        // ── 1. Full-history REST fetch (PARALLEL) ────────────────────────────────
+        // Instead of chaining requests sequentially (slow: 100 req × 100ms = 10s),
+        // we pre-compute every page's endTime and fire all requests at once via
+        // Promise.all. Browser HTTP/2 multiplexes them → ~200-400ms total.
+        //
+        // endTime formula: now - pageIndex × LIMIT × intervalMs
+        //   Page 0 = latest 1000 candles (no endTime param)
+        //   Page 1 = 1000 candles ending 1000 intervals ago
+        //   Page N = 1000 candles ending N×1000 intervals ago
+        // Pages before listing date return [] and are silently discarded.
+        // Duplicates at page boundaries are removed by the seen-Set dedup pass.
         const fetchData = async () => {
             try {
                 setIsLoading(true)
-                const LIMIT = 1000
-                const MAX_PAGES = 100 // hard safety cap
-                let allCandles: { time: Time; open: number; high: number; low: number; close: number }[] = []
-                let endTime: number | undefined = undefined
+                const LIMIT     = 1000
+                const MAX_PAGES = 100 // 100 000 candles max
 
-                for (let page = 0; page < MAX_PAGES; page++) {
-                    if (cancelled) return
-
-                    let url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${LIMIT}`
-                    if (endTime !== undefined) url += `&endTime=${endTime}`
-
-                    const response = await fetch(url)
-                    if (!response.ok || cancelled) break
-
-                    const data: any[] = await response.json()
-                    if (!data.length) break
-
-                    const candles = data.map((d: any) => ({
-                        time: d[0] / 1000 as Time,
-                        open:  parseFloat(d[1]),
-                        high:  parseFloat(d[2]),
-                        low:   parseFloat(d[3]),
-                        close: parseFloat(d[4]),
-                    }))
-
-                    allCandles = [...candles, ...allCandles]
-                    endTime = data[0][0] - 1
-
-                    // Fewer than LIMIT → we've reached the very first candle on exchange
-                    if (data.length < LIMIT) break
+                // Interval duration needed to compute each page's endTime offset
+                const INTERVAL_MS: Record<string, number> = {
+                    '1m': 60_000,  '3m': 180_000,  '5m': 300_000,
+                    '15m': 900_000, '30m': 1_800_000,
+                    '1h': 3_600_000, '2h': 7_200_000,
+                    '4h': 14_400_000, '6h': 21_600_000, '8h': 28_800_000, '12h': 43_200_000,
+                    '1d': 86_400_000, '3d': 259_200_000, '1w': 604_800_000,
                 }
+                const ivMs = INTERVAL_MS[interval] ?? 3_600_000
+                const now  = Date.now()
+
+                // One fetch per page — all launched simultaneously
+                const fetchPage = async (pageIndex: number) => {
+                    if (cancelled) return []
+                    try {
+                        const endTime = now - pageIndex * LIMIT * ivMs
+                        const url = pageIndex === 0
+                            ? `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${LIMIT}`
+                            : `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${LIMIT}&endTime=${endTime}`
+                        const resp = await fetch(url)
+                        if (!resp.ok || cancelled) return []
+                        const data: any[] = await resp.json()
+                        return data.map((d: any) => ({
+                            time:  d[0] / 1000 as Time,
+                            open:  parseFloat(d[1]),
+                            high:  parseFloat(d[2]),
+                            low:   parseFloat(d[3]),
+                            close: parseFloat(d[4]),
+                        }))
+                    } catch { return [] }
+                }
+
+                // 🚀 Fire all MAX_PAGES requests at once
+                const pages = await Promise.all(
+                    Array.from({ length: MAX_PAGES }, (_, i) => fetchPage(i))
+                )
 
                 if (cancelled) return
 
-                // Sort by time (safety net) and deduplicate
+                // Flatten → sort by time → remove duplicates at page boundaries
+                type Candle = { time: Time; open: number; high: number; low: number; close: number }
+                let allCandles: Candle[] = (pages.flat() as Candle[])
                 allCandles.sort((a, b) => (a.time as number) - (b.time as number))
                 const seen = new Set<number>()
                 allCandles = allCandles.filter(c => {
