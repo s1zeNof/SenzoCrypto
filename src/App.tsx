@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { Toaster } from 'sonner'
 import { useAuth } from './contexts/AuthContext'
 import MainLayout from './components/layout/MainLayout'
 import LandingPage from './pages/LandingPage'
@@ -43,6 +44,8 @@ function App() {
   }
 
   return (
+    <>
+    <Toaster position="top-right" richColors />
     <Routes>
       {/* Public Routes */}
       <Route
@@ -100,6 +103,7 @@ function App() {
         element={<Navigate to={user ? "/app/dashboard" : "/"} replace />}
       />
     </Routes>
+    </>
   )
 }
 
