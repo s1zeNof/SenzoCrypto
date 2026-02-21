@@ -213,7 +213,7 @@ export default function PostsList() {
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-sm text-gray-400 whitespace-nowrap">
-                                            {post.createdAt && formatDate(post.createdAt.toDate())}
+                                            {post.createdAt && formatDate(new Date(post.createdAt))}
                                         </td>
                                         <td className="px-6 py-4 text-sm text-gray-400">
                                             {post.views || 0}
