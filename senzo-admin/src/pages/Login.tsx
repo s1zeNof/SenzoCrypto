@@ -32,12 +32,14 @@ export default function Login() {
     const handleGoogleLogin = async () => {
         setLoading(true)
         try {
+            const redirectTo = import.meta.env.VITE_ADMIN_URL
+                ? import.meta.env.VITE_ADMIN_URL + '/posts'
+                : window.location.origin + '/posts'
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
-                options: { redirectTo: window.location.origin + '/posts' },
+                options: { redirectTo },
             })
             if (error) throw error
-            // OAuth redirects — navigate() not needed here
         } catch (error: any) {
             toast.error('Помилка входу: ' + error.message)
             setLoading(false)

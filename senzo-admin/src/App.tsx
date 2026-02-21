@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
+import { supabase } from './lib/supabase'
 import Layout from './components/Layout'
 import Login from './pages/Login'
 import PostsList from './pages/PostsList'
@@ -9,7 +10,7 @@ import EmojiPacksManager from './pages/EmojiPacksManager'
 import StickerPacksManager from './pages/StickerPacksManager'
 
 function App() {
-  const { user, loading } = useAuth()
+  const { user, isAdmin, loading } = useAuth()
 
   if (loading) {
     return (
@@ -25,6 +26,26 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
+    )
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <div className="text-center max-w-md">
+          <div className="text-6xl mb-6">🚫</div>
+          <h1 className="text-2xl font-bold mb-2">Доступ заборонено</h1>
+          <p className="text-gray-400 mb-6">
+            Ваш акаунт <span className="text-white">{user.email}</span> не має прав адміністратора.
+          </p>
+          <button
+            onClick={() => supabase.auth.signOut()}
+            className="px-6 py-2 bg-surface border border-border rounded-lg hover:bg-border transition-colors"
+          >
+            Вийти
+          </button>
+        </div>
+      </div>
     )
   }
 
