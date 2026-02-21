@@ -233,7 +233,7 @@ export default function Academy() {
                                         {/* Meta */}
                                         <div className="flex items-center justify-between text-xs text-gray-500">
                                             <span>{post.author.name}</span>
-                                            <span>{formatDate(post.createdAt.toDate())}</span>
+                                            <span>{formatDate(new Date(post.createdAt))}</span>
                                         </div>
                                     </div>
                                 </Link>

@@ -117,7 +117,7 @@ export default function Airdrops() {
                                     </p>
                                     <div className="flex items-center justify-between text-xs text-gray-500">
                                         <span>{post.author.name}</span>
-                                        <span>{formatDate(post.createdAt.toDate())}</span>
+                                        <span>{formatDate(new Date(post.createdAt))}</span>
                                     </div>
                                     {post.sourceUrl && (
                                         <div className="mt-4 pt-4 border-t border-border text-xs text-blue-400 truncate">

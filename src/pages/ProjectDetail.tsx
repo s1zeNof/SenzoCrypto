@@ -442,9 +442,9 @@ export default function ProjectDetail() {
                                             </span>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-xs text-gray-500">
-                                                    {entry.date?.toDate().toLocaleString('uk-UA', {
+                                                    {entry.date ? new Date(entry.date).toLocaleString('uk-UA', {
                                                         day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
-                                                    })}
+                                                    }) : ''}
                                                 </span>
                                                 {editingEntryId !== entry.id && (
                                                     <div className="flex gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity">

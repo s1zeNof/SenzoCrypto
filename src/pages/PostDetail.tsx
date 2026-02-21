@@ -105,7 +105,7 @@ export default function PostDetail() {
                         </div>
                         <div className="flex items-center gap-2">
                             <Clock className="w-4 h-4" />
-                            {formatDate(post.createdAt.toDate())}
+                            {formatDate(new Date(post.createdAt))}
                         </div>
                         <div className="flex items-center gap-2">
                             <Eye className="w-4 h-4" />
