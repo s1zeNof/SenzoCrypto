@@ -5,7 +5,7 @@ import { useUI } from "@/store/ui"
 
 export default function MainLayout() {
     const location = useLocation()
-    const isSimulator = location.pathname === "/app/simulator" || location.pathname === "/app/backtest"
+    const isSimulator = location.pathname === "/app/simulator"
     const { sidebarMode } = useUI()
     const mainMargin = sidebarMode === "expanded" ? "ml-52" : "ml-16"
     return (
