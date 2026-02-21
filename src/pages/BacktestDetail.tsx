@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
     ArrowLeft, Plus, Trash2, TrendingUp, TrendingDown,
     BarChart2, Target, Activity, Award, FlaskConical,
     ChevronDown, ChevronUp, Loader2, Edit2, Check, X,
-    CheckSquare, Square, BookOpen, PlusCircle,
+    CheckSquare, Square, BookOpen, PlusCircle, Info,
 } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { useAuth } from '@/contexts/AuthContext'
@@ -13,29 +13,25 @@ import { calculateBacktestStats } from '@/utils/backtestStats'
 import { toast } from 'sonner'
 
 const TIMEFRAMES = ['1m','5m','15m','30m','1H','2H','4H','8H','12H','1D','3D','1W','1M']
+const LEVERAGES = [1,2,3,5,10,15,20,25,50,75,100,125]
 
 // ─── Вбудований чек-лист професійних питань ──────────────────────────────────
 const DEFAULT_CHECKLIST: { id: string; category: string; text: string }[] = [
-    // Тренд і контекст
     { id: 'trend_htf',    category: 'Тренд',     text: 'Тренд на старшому ТФ підтверджує напрям угоди?' },
     { id: 'trend_align',  category: 'Тренд',     text: 'Усі таймфрейми (HTF / MTF / LTF) в одному напрямку?' },
     { id: 'market_phase', category: 'Тренд',     text: 'Ринок в фазі тренду, а не флету/розподілу?' },
-    // Рівні та структура
     { id: 'key_level',    category: 'Структура', text: 'Вхід відбувається від ключового рівня (підтримка/опір, OB, FVG)?' },
     { id: 'bos',          category: 'Структура', text: 'Є підтвердження зламу структури (BOS/CHoCH)?' },
     { id: 'liquidity',    category: 'Структура', text: 'Ліквідність знята перед входом?' },
     { id: 'fvg',          category: 'Структура', text: 'Є незакритий FVG / імбаланс у зоні входу?' },
-    // Підтвердження входу
     { id: 'entry_signal', category: 'Вхід',      text: 'Є чіткий сигнал входу по моїй стратегії?' },
     { id: 'candle_conf',  category: 'Вхід',      text: 'Свічка підтвердження закрилась у потрібному місці?' },
     { id: 'volume',       category: 'Вхід',      text: 'Обсяг підтверджує рух (зростаючий у напрямку угоди)?' },
     { id: 'session',      category: 'Вхід',      text: 'Вхід відбувається в активну сесію (Лондон / Нью-Йорк)?' },
-    // Ризик-менеджмент
     { id: 'sl_valid',     category: 'Ризик',     text: 'Стоп-лосс розміщений за структурним рівнем, а не "на очко"?' },
     { id: 'rr_ratio',     category: 'Ризик',     text: 'Risk/Reward ≥ 1:2?' },
     { id: 'risk_pct',     category: 'Ризик',     text: 'Ризик на угоду ≤ 1-2% від депозиту?' },
     { id: 'no_revenge',   category: 'Ризик',     text: 'Угода не є помстою після попереднього збитку?' },
-    // Психологія
     { id: 'plan_trade',   category: 'Психологія', text: 'Угода запланована заздалегідь, а не імпульсивно?' },
     { id: 'no_fomo',      category: 'Психологія', text: 'Відсутній FOMO (страх пропустити рух)?' },
     { id: 'clear_mind',   category: 'Психологія', text: 'Торгую з ясним розумом (не втомлений, не під стресом)?' },
@@ -45,7 +41,7 @@ const DEFAULT_CHECKLIST: { id: string; category: string; text: string }[] = [
 function calcTrade(entry: number, exit: number, sl: number | undefined, side: 'long'|'short', size: number, capital: number) {
     const dir = side === 'long' ? 1 : -1
     const pnl = dir * (exit - entry) * size
-    const pnlPct = (pnl / capital) * 100
+    const pnlPct = capital > 0 ? (pnl / capital) * 100 : 0
     let rMultiple = 0
     if (sl && sl !== entry) {
         const risk = Math.abs(entry - sl) * size
@@ -55,12 +51,48 @@ function calcTrade(entry: number, exit: number, sl: number | undefined, side: 'l
     return { pnl, pnlPct, rMultiple, status }
 }
 
+// Safe toFixed: повертає '0.00' якщо значення не число
+function sf(v: number | undefined | null, digits = 2): string {
+    const n = Number(v)
+    return isNaN(n) ? '0.00' : n.toFixed(digits)
+}
+
+type SizeMode = 'contracts' | 'usdt'
+
 const emptyForm = () => ({
     pair: '', timeframe: '1H', side: 'long' as 'long'|'short',
     entry_price: '', exit_price: '', stop_loss: '', take_profit: '',
-    size: '', entry_time: '', exit_time: '',
+    size: '', usdt_amount: '', leverage: 1, size_mode: 'contracts' as SizeMode,
+    entry_time: '', exit_time: '',
     screenshot_url: '', notes: '',
 })
+
+// ─── Tooltip компонент ─────────────────────────────────────────────────────────
+function InfoTooltip({ text }: { text: string }) {
+    const [show, setShow] = useState(false)
+    const ref = useRef<HTMLDivElement>(null)
+
+    return (
+        <div className="relative inline-flex items-center" ref={ref}>
+            <button
+                type="button"
+                onMouseEnter={() => setShow(true)}
+                onMouseLeave={() => setShow(false)}
+                onFocus={() => setShow(true)}
+                onBlur={() => setShow(false)}
+                className="text-gray-500 hover:text-gray-300 transition-colors"
+            >
+                <Info className="w-3.5 h-3.5" />
+            </button>
+            {show && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-64 p-3 bg-gray-900 border border-gray-700 rounded-xl text-xs text-gray-300 shadow-2xl leading-relaxed pointer-events-none">
+                    {text}
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 border-r border-b border-gray-700 rotate-45 -mt-1" />
+                </div>
+            )}
+        </div>
+    )
+}
 
 export default function BacktestDetail() {
     const { id } = useParams<{ id: string }>()
@@ -98,7 +130,6 @@ export default function BacktestDetail() {
                 setStrategy(s)
                 setTrades(trds)
                 setForm(f => ({ ...f, pair: s.symbol, timeframe: s.timeframe }))
-                // Load saved custom questions from localStorage
                 const saved = localStorage.getItem(`backtest_custom_questions_${user.id}`)
                 if (saved) setCustomQuestions(JSON.parse(saved))
             } catch (e: any) {
@@ -109,6 +140,18 @@ export default function BacktestDetail() {
         }
         load()
     }, [id, user])
+
+    // Auto-calculate size from USDT amount + leverage
+    useEffect(() => {
+        if (form.size_mode !== 'usdt') return
+        const usdt = parseFloat(form.usdt_amount)
+        const entry = parseFloat(form.entry_price)
+        const lev = form.leverage
+        if (!isNaN(usdt) && !isNaN(entry) && entry > 0 && usdt > 0) {
+            const contracts = (usdt * lev) / entry
+            setForm(f => ({ ...f, size: contracts.toFixed(6) }))
+        }
+    }, [form.usdt_amount, form.entry_price, form.leverage, form.size_mode])
 
     const toggleCheck = (itemId: string) => {
         setCheckedItems(prev => {
@@ -150,7 +193,7 @@ export default function BacktestDetail() {
             pair: t.pair, timeframe: t.timeframe, side: t.side,
             entryPrice: t.entry_price, exitPrice: t.exit_price,
             stopLoss: t.stop_loss, takeProfit: t.take_profit,
-            size: t.size, pnl: t.pnl, rMultiple: t.r_multiple,
+            size: t.size, pnl: t.pnl ?? 0, rMultiple: t.r_multiple ?? 0,
             status: t.status,
             entryTime: new Date(t.entry_time), exitTime: new Date(t.exit_time),
             notes: t.notes,
@@ -165,7 +208,7 @@ export default function BacktestDetail() {
             { date: 'Старт', equity },
             ...[...trades].sort((a,b) => new Date(a.entry_time).getTime() - new Date(b.entry_time).getTime())
                 .map(t => {
-                    equity += t.pnl
+                    equity += (t.pnl ?? 0)
                     return { date: new Date(t.exit_time).toLocaleDateString('uk-UA', { day:'numeric', month:'short' }), equity: +equity.toFixed(2) }
                 })
         ]
@@ -186,8 +229,21 @@ export default function BacktestDetail() {
     // Preview calc
     const preview = useMemo(() => {
         if (!strategy || !form.entry_price || !form.exit_price || !form.size) return null
-        return calcTrade(+form.entry_price, +form.exit_price, form.stop_loss ? +form.stop_loss : undefined, form.side, +form.size, strategy.initial_capital)
+        const size = parseFloat(form.size)
+        if (isNaN(size) || size <= 0) return null
+        return calcTrade(+form.entry_price, +form.exit_price, form.stop_loss ? +form.stop_loss : undefined, form.side, size, strategy.initial_capital)
     }, [form.entry_price, form.exit_price, form.stop_loss, form.side, form.size, strategy])
+
+    // Calculated margin (USDT used)
+    const marginInfo = useMemo(() => {
+        const entry = parseFloat(form.entry_price)
+        const size = parseFloat(form.size)
+        const lev = form.leverage
+        if (isNaN(entry) || isNaN(size) || entry <= 0 || size <= 0) return null
+        const notional = entry * size
+        const margin = notional / lev
+        return { notional, margin }
+    }, [form.entry_price, form.size, form.leverage])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -245,7 +301,7 @@ export default function BacktestDetail() {
             pair: t.pair, timeframe: t.timeframe, side: t.side,
             entry_price: t.entry_price.toString(), exit_price: t.exit_price.toString(),
             stop_loss: t.stop_loss?.toString() ?? '', take_profit: t.take_profit?.toString() ?? '',
-            size: t.size.toString(),
+            size: t.size.toString(), usdt_amount: '', leverage: 1, size_mode: 'contracts',
             entry_time: t.entry_time.slice(0,16), exit_time: t.exit_time.slice(0,16),
             screenshot_url: t.screenshot_url ?? '', notes: t.notes ?? '',
         })
@@ -274,12 +330,14 @@ export default function BacktestDetail() {
     )
     if (!strategy) return null
 
-    const pnlColor = (v: number) => v > 0 ? 'text-green-400' : v < 0 ? 'text-red-400' : 'text-gray-400'
-    const pnlBg   = (v: number) => v > 0 ? 'bg-green-500/10 border-green-500/20 text-green-400'
-                                  : v < 0 ? 'bg-red-500/10 border-red-500/20 text-red-400'
-                                  : 'bg-gray-500/10 border-gray-500/20 text-gray-400'
+    const pnlColor = (v: number | undefined | null) => {
+        const n = v ?? 0
+        return n > 0 ? 'text-green-400' : n < 0 ? 'text-red-400' : 'text-gray-400'
+    }
+    const pnlBg = (v: number) => v > 0 ? 'bg-green-500/10 border-green-500/20 text-green-400'
+                                : v < 0 ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                                : 'bg-gray-500/10 border-gray-500/20 text-gray-400'
 
-    // Group checklist by category
     const categories = [...new Set(allChecklist.map(q => q.category))]
 
     return (
@@ -302,7 +360,12 @@ export default function BacktestDetail() {
                     {strategy.description && <p className="text-sm text-gray-400 mt-1 line-clamp-2">{strategy.description}</p>}
                 </div>
                 <button
-                    onClick={() => { setShowForm(!showForm); setEditingId(null); setForm(f => ({ ...emptyForm(), pair: strategy.symbol, timeframe: strategy.timeframe })); setCheckedItems(new Set()) }}
+                    onClick={() => {
+                        setShowForm(!showForm)
+                        setEditingId(null)
+                        setForm(f => ({ ...emptyForm(), pair: strategy.symbol, timeframe: strategy.timeframe }))
+                        setCheckedItems(new Set())
+                    }}
                     className="flex-shrink-0 flex items-center gap-2 px-3 sm:px-4 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-xl transition-colors font-medium text-sm">
                     <Plus className="w-4 h-4" />
                     <span className="hidden sm:inline">Додати угоду</span>
@@ -313,12 +376,12 @@ export default function BacktestDetail() {
             {/* ── Stats cards ── */}
             {trades.length > 0 && stats && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
-                    <StatCard label="Win Rate"      value={`${stats.winRate.toFixed(1)}%`}         color={stats.winRate >= 50 ? 'green' : 'red'} icon={<Award className="w-4 h-4"/>} />
-                    <StatCard label="Profit Factor" value={stats.profitFactor === Infinity ? '∞' : stats.profitFactor.toFixed(2)} color={stats.profitFactor >= 1 ? 'green' : 'red'} icon={<Activity className="w-4 h-4"/>} />
-                    <StatCard label="Total PnL"     value={`${stats.totalPnl >= 0 ? '+' : ''}${stats.totalPnl.toFixed(2)}`} color={stats.totalPnl >= 0 ? 'green' : 'red'} icon={<TrendingUp className="w-4 h-4"/>} />
-                    <StatCard label="Drawdown"      value={`${stats.maxDrawdown.toFixed(2)}`}      color="red"    icon={<TrendingDown className="w-4 h-4"/>} />
-                    <StatCard label="Avg R"         value={`${stats.avgR.toFixed(2)}R`}            color={stats.avgR >= 0 ? 'green' : 'red'} icon={<Target className="w-4 h-4"/>} />
-                    <StatCard label="Угоди"         value={`${stats.wins}W / ${stats.losses}L`}    color="blue"   icon={<BarChart2 className="w-4 h-4"/>} />
+                    <StatCard label="Win Rate"      value={`${sf(stats.winRate, 1)}%`}          color={stats.winRate >= 50 ? 'green' : 'red'} icon={<Award className="w-4 h-4"/>} />
+                    <StatCard label="Profit Factor" value={stats.profitFactor === Infinity ? '∞' : sf(stats.profitFactor)} color={stats.profitFactor >= 1 ? 'green' : 'red'} icon={<Activity className="w-4 h-4"/>} />
+                    <StatCard label="Total PnL"     value={`${(stats.totalPnl ?? 0) >= 0 ? '+' : ''}${sf(stats.totalPnl)}`} color={(stats.totalPnl ?? 0) >= 0 ? 'green' : 'red'} icon={<TrendingUp className="w-4 h-4"/>} />
+                    <StatCard label="Drawdown"      value={`${sf(stats.maxDrawdown)}`}           color="red"   icon={<TrendingDown className="w-4 h-4"/>} />
+                    <StatCard label="Avg R"         value={`${sf(stats.avgR)}R`}                 color={(stats.avgR ?? 0) >= 0 ? 'green' : 'red'} icon={<Target className="w-4 h-4"/>} />
+                    <StatCard label="Угоди"         value={`${stats.wins ?? 0}W / ${stats.losses ?? 0}L`} color="blue" icon={<BarChart2 className="w-4 h-4"/>} />
                 </div>
             )}
 
@@ -387,12 +450,123 @@ export default function BacktestDetail() {
                                 </div>
                             </div>
 
-                            {/* Row 3: size + times */}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                <div>
-                                    <label className="label">Розмір позиції <span className="text-red-400">*</span></label>
-                                    <input type="number" step="any" value={form.size} onChange={e => set('size', e.target.value)} placeholder="1.0" className="input" required />
+                            {/* Row 3: position size block */}
+                            <div className="bg-background/60 border border-border rounded-xl p-4 space-y-3">
+                                {/* Header row: label + mode toggle */}
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium">Розмір позиції</span>
+                                        <InfoTooltip text={
+                                            form.size_mode === 'contracts'
+                                                ? "Кількість контрактів/монет у угоді. Наприклад, 0.1 BTC або 100 контрактів. PnL = (Вихід - Вхід) × Розмір."
+                                                : "Введи суму в USDT та плече — система автоматично вирахує кількість контрактів.\n\nФормула: Контракти = (USDT × Плече) ÷ Ціна входу"
+                                        } />
+                                    </div>
+                                    {/* Mode toggle */}
+                                    <div className="flex gap-0.5 bg-surface border border-border rounded-lg p-0.5 text-xs">
+                                        <button type="button"
+                                            onClick={() => set('size_mode', 'contracts')}
+                                            className={`px-2.5 py-1.5 rounded-md transition-all font-medium ${form.size_mode === 'contracts' ? 'bg-primary text-white' : 'text-gray-400 hover:text-white'}`}>
+                                            Контракти
+                                        </button>
+                                        <button type="button"
+                                            onClick={() => set('size_mode', 'usdt')}
+                                            className={`px-2.5 py-1.5 rounded-md transition-all font-medium ${form.size_mode === 'usdt' ? 'bg-primary text-white' : 'text-gray-400 hover:text-white'}`}>
+                                            USDT + Плече
+                                        </button>
+                                    </div>
                                 </div>
+
+                                {form.size_mode === 'contracts' ? (
+                                    /* Contracts mode */
+                                    <div>
+                                        <input
+                                            type="number" step="any"
+                                            value={form.size}
+                                            onChange={e => set('size', e.target.value)}
+                                            placeholder="Кількість монет/контрактів (напр. 0.1)"
+                                            className="input"
+                                            required
+                                        />
+                                        {marginInfo && (
+                                            <p className="text-xs text-gray-500 mt-1.5">
+                                                Умовна вартість: <span className="text-gray-300 font-medium">{marginInfo.notional.toFixed(2)} USDT</span>
+                                                {form.leverage > 1 && <span className="ml-2">· Маржа (×{form.leverage}): <span className="text-yellow-400 font-medium">{marginInfo.margin.toFixed(2)} USDT</span></span>}
+                                            </p>
+                                        )}
+                                    </div>
+                                ) : (
+                                    /* USDT + Leverage mode */
+                                    <div className="space-y-3">
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="label">Сума (USDT) <span className="text-red-400">*</span></label>
+                                                <input
+                                                    type="number" step="any"
+                                                    value={form.usdt_amount}
+                                                    onChange={e => set('usdt_amount', e.target.value)}
+                                                    placeholder="100"
+                                                    className="input"
+                                                    required={form.size_mode === 'usdt'}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="label">Плече</label>
+                                                <select
+                                                    value={form.leverage}
+                                                    onChange={e => set('leverage', Number(e.target.value))}
+                                                    className="input"
+                                                >
+                                                    {LEVERAGES.map(l => (
+                                                        <option key={l} value={l}>×{l}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        {/* Calculated result */}
+                                        {form.size && parseFloat(form.size) > 0 && (
+                                            <div className="flex flex-wrap gap-3 px-3 py-2 bg-primary/5 border border-primary/20 rounded-xl text-xs">
+                                                <span className="text-gray-400">Контракти: <span className="text-white font-mono font-medium">{parseFloat(form.size).toFixed(6)}</span></span>
+                                                {marginInfo && <>
+                                                    <span className="text-gray-600">·</span>
+                                                    <span className="text-gray-400">Позиція: <span className="text-white font-medium">{marginInfo.notional.toFixed(2)} USDT</span></span>
+                                                    <span className="text-gray-600">·</span>
+                                                    <span className="text-gray-400">Маржа: <span className="text-yellow-400 font-medium">{marginInfo.margin.toFixed(2)} USDT</span></span>
+                                                </>}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Leverage for contracts mode too */}
+                                {form.size_mode === 'contracts' && (
+                                    <div>
+                                        <label className="label flex items-center gap-1.5">
+                                            Плече (для довідки)
+                                            <InfoTooltip text="Не впливає на PnL, лише показує яку маржу ви використали." />
+                                        </label>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {LEVERAGES.map(l => (
+                                                <button
+                                                    key={l} type="button"
+                                                    onClick={() => set('leverage', l)}
+                                                    className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
+                                                        form.leverage === l
+                                                            ? 'bg-primary/20 border-primary/40 text-primary'
+                                                            : 'bg-background border-border text-gray-500 hover:border-gray-500 hover:text-gray-300'
+                                                    }`}
+                                                >
+                                                    ×{l}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Row 4: times */}
+                            <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="label">Час входу</label>
                                     <input type="datetime-local" value={form.entry_time} onChange={e => set('entry_time', e.target.value)} className="input" />
@@ -403,7 +577,7 @@ export default function BacktestDetail() {
                                 </div>
                             </div>
 
-                            {/* Row 4: screenshot + notes */}
+                            {/* Row 5: screenshot + notes */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
                                     <label className="label">Скріншот (URL)</label>
@@ -494,12 +668,14 @@ export default function BacktestDetail() {
                             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-1">
                                 {preview ? (
                                     <div className={`flex flex-wrap items-center gap-3 px-4 py-2 rounded-xl border text-sm font-medium ${pnlBg(preview.pnl)}`}>
-                                        <span>PnL: {preview.pnl >= 0 ? '+' : ''}{preview.pnl.toFixed(2)} ({preview.pnlPct >= 0 ? '+' : ''}{preview.pnlPct.toFixed(2)}%)</span>
-                                        {preview.rMultiple !== 0 && <span>· R: {preview.rMultiple.toFixed(2)}</span>}
+                                        <span>PnL: {preview.pnl >= 0 ? '+' : ''}{sf(preview.pnl)} ({preview.pnlPct >= 0 ? '+' : ''}{sf(preview.pnlPct)}%)</span>
+                                        {preview.rMultiple !== 0 && <span>· R: {sf(preview.rMultiple)}</span>}
                                         <span className="capitalize">· {preview.status}</span>
                                         {checkedCount > 0 && <span className="text-gray-400">· ✅ {checkedCount}/{allChecklist.length}</span>}
                                     </div>
-                                ) : <div />}
+                                ) : (
+                                    <p className="text-xs text-gray-500">Заповни ціни та розмір для попереднього перегляду</p>
+                                )}
                                 <div className="flex gap-2 w-full sm:w-auto">
                                     <button type="button" onClick={() => { setShowForm(false); setEditingId(null) }}
                                         className="flex-1 sm:flex-none px-4 py-2 text-gray-400 hover:text-white hover:bg-surface-hover rounded-xl transition-all text-sm">
@@ -536,7 +712,7 @@ export default function BacktestDetail() {
                             <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
                             <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} width={55} />
                             <Tooltip contentStyle={{ background: '#1e1e2e', border: '1px solid #333', borderRadius: 8, fontSize: 12 }}
-                                formatter={(v: number) => [`${v.toFixed(2)} ${strategy.currency}`, 'Капітал']} />
+                                formatter={(v: number) => [`${sf(v)} ${strategy.currency}`, 'Капітал']} />
                             <ReferenceLine y={strategy.initial_capital} stroke="#4b5563" strokeDasharray="3 3" />
                             <Area type="monotone" dataKey="equity" stroke="#6366f1" strokeWidth={2} fill="url(#eq)" dot={false} />
                         </AreaChart>
@@ -618,11 +794,11 @@ export default function BacktestDetail() {
                                             <td className="px-4 py-3 text-right font-mono text-green-400">{t.take_profit ?? '—'}</td>
                                             <td className="px-4 py-3 text-right">{t.size}</td>
                                             <td className={`px-4 py-3 text-right font-bold ${pnlColor(t.pnl)}`}>
-                                                {t.pnl >= 0 ? '+' : ''}{t.pnl.toFixed(2)}
-                                                <span className="text-xs font-normal ml-1 opacity-70">({t.pnl_percent >= 0 ? '+' : ''}{t.pnl_percent.toFixed(1)}%)</span>
+                                                {(t.pnl ?? 0) >= 0 ? '+' : ''}{sf(t.pnl)}
+                                                <span className="text-xs font-normal ml-1 opacity-70">({(t.pnl_percent ?? 0) >= 0 ? '+' : ''}{sf(t.pnl_percent, 1)}%)</span>
                                             </td>
                                             <td className={`px-4 py-3 text-right font-medium ${pnlColor(t.r_multiple)}`}>
-                                                {t.r_multiple !== 0 ? `${t.r_multiple >= 0 ? '+' : ''}${t.r_multiple.toFixed(2)}R` : '—'}
+                                                {(t.r_multiple ?? 0) !== 0 ? `${(t.r_multiple ?? 0) >= 0 ? '+' : ''}${sf(t.r_multiple)}R` : '—'}
                                             </td>
                                             <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
                                                 {new Date(t.entry_time).toLocaleDateString('uk-UA', { day:'numeric', month:'short', year:'numeric' })}
@@ -671,11 +847,11 @@ export default function BacktestDetail() {
                                         </div>
                                         <div>
                                             <p className="text-gray-500">PnL</p>
-                                            <p className={`font-bold ${pnlColor(t.pnl)}`}>{t.pnl >= 0 ? '+' : ''}{t.pnl.toFixed(2)}</p>
+                                            <p className={`font-bold ${pnlColor(t.pnl)}`}>{(t.pnl ?? 0) >= 0 ? '+' : ''}{sf(t.pnl)}</p>
                                         </div>
                                         <div>
                                             <p className="text-gray-500">R-множник</p>
-                                            <p className={`font-medium ${pnlColor(t.r_multiple)}`}>{t.r_multiple !== 0 ? `${t.r_multiple >= 0 ? '+' : ''}${t.r_multiple.toFixed(2)}R` : '—'}</p>
+                                            <p className={`font-medium ${pnlColor(t.r_multiple)}`}>{(t.r_multiple ?? 0) !== 0 ? `${(t.r_multiple ?? 0) >= 0 ? '+' : ''}${sf(t.r_multiple)}R` : '—'}</p>
                                         </div>
                                     </div>
                                     <p className="text-xs text-gray-600">{new Date(t.entry_time).toLocaleDateString('uk-UA', { day:'numeric', month:'long', year:'numeric' })}</p>
