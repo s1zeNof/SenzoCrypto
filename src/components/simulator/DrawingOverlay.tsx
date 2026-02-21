@@ -83,13 +83,13 @@ export default function DrawingOverlay({
     const S = useRef({
         activeTool, currentDrawing, selectedDrawingId, hoveredDrawingId,
         isReplaySelectionMode, isMagnetEnabled, isShiftPressed, isCtrlPressed,
-        drawings, mousePos, data, interval,
+        drawings, mousePos, data, interval, chart,
     })
     useEffect(() => {
         S.current = {
             activeTool, currentDrawing, selectedDrawingId, hoveredDrawingId,
             isReplaySelectionMode, isMagnetEnabled, isShiftPressed, isCtrlPressed,
-            drawings, mousePos, data, interval,
+            drawings, mousePos, data, interval, chart,
         }
     })
 
@@ -302,6 +302,10 @@ export default function DrawingOverlay({
         const onUp = () => {
             isMouseDownRef.current = false
             dragInitRef.current = false
+            if (isDraggingRef.current) {
+                // Re-enable chart scroll after drag ends
+                S.current.chart?.applyOptions({ handleScroll: { pressedMouseMove: true } })
+            }
             isDraggingRef.current = false
             dragStartRef.current = null
             dragPointIdxRef.current = null
@@ -409,11 +413,12 @@ export default function DrawingOverlay({
                     }
                     if (nearHandle !== -1) {
                         dragPointIdxRef.current = nearHandle
-                        isDraggingRef.current = true
                     } else {
-                        isDraggingRef.current = true
                         dragStartRef.current = point
                     }
+                    isDraggingRef.current = true
+                    // Prevent chart from panning while a drawing is being dragged
+                    chart?.applyOptions({ handleScroll: { pressedMouseMove: false } })
                 }
             }
         }

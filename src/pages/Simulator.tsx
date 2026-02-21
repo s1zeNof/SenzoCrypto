@@ -333,24 +333,37 @@ export default function Simulator() {
     const isReplaySelectionModeRef = useRef(isReplaySelectionMode)
     useEffect(() => { isReplaySelectionModeRef.current = isReplaySelectionMode }, [isReplaySelectionMode])
 
-    // ── Fix: stop replay when timeframe OR symbol changes ──────────────────────
-    // Without this, fullDataRef inside ChartContainer gets overwritten with new
-    // interval's candles while replayIndexRef still points to the old index →
-    // nextCandle() returns wrong-interval data → chart breaks.
+    // ── Stop replay completely when the SYMBOL changes ──────────────────────────
+    // Different coin = completely different history, no point to preserve position.
     useEffect(() => {
         if (!isReplayActive) return
-        // Stop the playback timer immediately
         if (replayIntervalRef.current !== null) {
             window.clearInterval(replayIntervalRef.current)
             replayIntervalRef.current = null
         }
-        // Reset all replay state
         setIsReplayActive(false)
         setIsReplaySelectionMode(false)
         setIsReplayPaused(true)
-        // Tell ChartContainer to reset its refs and show full new data
         replayApi?.stopReplay()
-    }, [interval, symbol]) // eslint-disable-line react-hooks/exhaustive-deps
+    }, [symbol]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── Preserve replay position when only the TIMEFRAME changes ────────────────
+    // Save the current replay timestamp, let ChartContainer load new interval data,
+    // then ChartContainer re-runs replay from the same timestamp on the new candles.
+    useEffect(() => {
+        if (!isReplayActive || !replayApi || isReplaySelectionMode) return
+        // Pause the playback timer during data reload
+        if (replayIntervalRef.current !== null) {
+            window.clearInterval(replayIntervalRef.current)
+            replayIntervalRef.current = null
+        }
+        setIsReplayPaused(true)
+        // Ask ChartContainer to restore replay at this time once new data arrives
+        const currentTime = replayApi.getCurrentTime?.()
+        if (currentTime != null) {
+            replayApi.queueReplay?.(currentTime)
+        }
+    }, [interval]) // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
         <div className="h-[calc(100vh-64px)] flex flex-col bg-background text-white overflow-hidden relative">

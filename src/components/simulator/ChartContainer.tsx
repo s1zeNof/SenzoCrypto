@@ -14,6 +14,8 @@ interface ChartContainerProps {
             startReplay: (time: Time) => void
             nextCandle: () => void
             stopReplay: () => void
+            getCurrentTime: () => Time | null
+            queueReplay: (time: Time) => void
         }
     ) => void
     onDataUpdate?: (data: any[]) => void
@@ -31,6 +33,8 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
     const fullDataRef = useRef<any[]>([])
     const isReplayModeRef = useRef(false)
     const replayIndexRef = useRef<number>(-1) // Track current replay candle index
+    const pendingReplayTimeRef = useRef<Time | null>(null)
+    const [isLoading, setIsLoading] = useState(false)
 
     useEffect(() => {
         if (!chartContainerRef.current) return
@@ -71,7 +75,8 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
             onChartReady(chart, candleSeries, {
                 startReplay: (time: Time) => {
                     isReplayModeRef.current = true
-                    const index = fullDataRef.current.findIndex(d => d.time === time)
+                    let index = fullDataRef.current.findIndex(d => (d.time as number) >= (time as number))
+                    if (index === -1) index = fullDataRef.current.length - 1
                     if (index !== -1) {
                         replayIndexRef.current = index
                         const slicedData = fullDataRef.current.slice(0, index + 1)
@@ -90,8 +95,17 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
                 stopReplay: () => {
                     isReplayModeRef.current = false
                     replayIndexRef.current = -1
+                    pendingReplayTimeRef.current = null // cancel any queued restore
                     candleSeries.setData(fullDataRef.current)
                     chart.timeScale().fitContent()
+                },
+                getCurrentTime: () => {
+                    const idx = replayIndexRef.current
+                    if (idx < 0 || idx >= fullDataRef.current.length) return null
+                    return fullDataRef.current[idx]?.time ?? null
+                },
+                queueReplay: (time: Time) => {
+                    pendingReplayTimeRef.current = time
                 }
             })
         }
@@ -131,20 +145,25 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
 
         let cancelled = false
 
-        // ── 1. Paginated REST fetch: 3 pages × 1000 = 3000 candles ──────────────
-        // Binance max per request = 1000. We chain requests using `endTime`
-        // to fetch older history before the previous batch.
-        // Result by timeframe:
-        //   1m → ~2 days | 5m → ~10d | 15m → ~31d
-        //   1h → ~125d   | 4h → ~1.4yr | 1d → ~8yr
+        // ── 1. Full-history REST fetch ───────────────────────────────────────────
+        // Binance max per request = 1000. We chain backwards using `endTime`
+        // until we get fewer than LIMIT candles (= start of exchange data).
+        // Safety cap: MAX_PAGES × 1000 candles total.
+        //   1m   → cap at 30 000 (~20 days)
+        //   5m   → cap at 30 000 (~104 days)
+        //   15m  → cap at 30 000 (~312 days)
+        //   1h   → full BTC history ~70 000 candles (no cap hit)
+        //   4h   → full BTC history ~18 000 candles (no cap hit)
+        //   1d   → full BTC history ~3 000 candles  (no cap hit)
         const fetchData = async () => {
             try {
+                setIsLoading(true)
                 const LIMIT = 1000
-                const PAGES = 3
+                const MAX_PAGES = 100 // hard safety cap
                 let allCandles: { time: Time; open: number; high: number; low: number; close: number }[] = []
                 let endTime: number | undefined = undefined
 
-                for (let page = 0; page < PAGES; page++) {
+                for (let page = 0; page < MAX_PAGES; page++) {
                     if (cancelled) return
 
                     let url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${LIMIT}`
@@ -164,12 +183,10 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
                         close: parseFloat(d[4]),
                     }))
 
-                    // Prepend older candles before the current batch
                     allCandles = [...candles, ...allCandles]
-                    // Next request: fetch candles ending just before the oldest candle
                     endTime = data[0][0] - 1
 
-                    // If fewer than LIMIT returned, we've hit the start of history
+                    // Fewer than LIMIT → we've reached the very first candle on exchange
                     if (data.length < LIMIT) break
                 }
 
@@ -177,7 +194,6 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
 
                 // Sort by time (safety net) and deduplicate
                 allCandles.sort((a, b) => (a.time as number) - (b.time as number))
-                // Remove exact duplicates by time
                 const seen = new Set<number>()
                 allCandles = allCandles.filter(c => {
                     const t = c.time as number
@@ -188,12 +204,25 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
 
                 fullDataRef.current = allCandles
 
-                if (!isReplayModeRef.current) {
+                if (pendingReplayTimeRef.current !== null) {
+                    // Timeframe switched during replay → restore at the saved time
+                    const pendingTime = pendingReplayTimeRef.current as number
+                    pendingReplayTimeRef.current = null
+                    isReplayModeRef.current = true
+                    let idx = allCandles.findIndex(d => (d.time as number) >= pendingTime)
+                    if (idx === -1) idx = allCandles.length - 1
+                    replayIndexRef.current = idx
+                    candleSeriesRef.current?.setData(allCandles.slice(0, idx + 1))
+                    chartRef.current?.timeScale().fitContent()
+                    onDataUpdate?.(allCandles)
+                } else if (!isReplayModeRef.current) {
                     candleSeriesRef.current?.setData(allCandles)
                     onDataUpdate?.(allCandles)
                 }
             } catch (error) {
                 if (!cancelled) console.error('Error fetching Binance data:', error)
+            } finally {
+                if (!cancelled) setIsLoading(false)
             }
         }
 
@@ -237,6 +266,14 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
 
 
     return (
-        <div ref={chartContainerRef} className="w-full h-full" onDoubleClick={onDoubleClick} />
+        <div className="w-full h-full relative">
+            <div ref={chartContainerRef} className="w-full h-full" onDoubleClick={onDoubleClick} />
+            {isLoading && (
+                <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/70 text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-2 pointer-events-none z-10">
+                    <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Завантаження даних...
+                </div>
+            )}
+        </div>
     )
 }
