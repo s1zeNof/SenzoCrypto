@@ -138,6 +138,14 @@
 
 @layer components {
 
+  /* Form helpers */
+  .input {
+    @apply w-full px-3 py-2.5 bg-background border border-border rounded-xl focus:outline-none focus:border-primary transition-colors text-sm;
+  }
+  .label {
+    @apply block text-xs font-medium text-gray-400 mb-1.5;
+  }
+
   /* Glass Morphism Card */
   .glass-card {
     background: var(--glass-bg);

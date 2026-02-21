@@ -16,6 +16,7 @@ import PostDetail from './pages/PostDetail'
 import Profile from './pages/Profile'
 import Simulator from './pages/Simulator'
 import Backtest from './pages/Backtest'
+import BacktestDetail from './pages/BacktestDetail'
 import Airdrops from './pages/Airdrops'
 import CryptoGames from './pages/CryptoGames'
 import DailyTrades from './pages/DailyTrades'
@@ -85,6 +86,7 @@ function App() {
         <Route path="projects/:id" element={<ProjectDetail />} />
         <Route path="simulator" element={<Simulator />} />
         <Route path="backtest" element={<Backtest />} />
+        <Route path="backtest/:id" element={<BacktestDetail />} />
         <Route path="docs" element={<Docs />} />
         <Route path="compute-nodes" element={<ComputeNodes />} />
         <Route path="sdk" element={<SDK />} />
