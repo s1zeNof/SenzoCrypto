@@ -1,6 +1,6 @@
 /**
  * MIGRATED TO SUPABASE — replaces Firebase onAuthStateChanged
- * Also checks user_profiles.role = 'admin' before granting access
+ * Checks admin role via user_profiles table with fallback to user_metadata
  */
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -17,13 +17,22 @@ const AuthContext = createContext<AuthContextType>({ user: null, isAdmin: false,
 
 export const useAuth = () => useContext(AuthContext)
 
-async function checkAdmin(userId: string): Promise<boolean> {
-    const { data } = await supabase
-        .from('user_profiles')
-        .select('role')
-        .eq('id', userId)
-        .single()
-    return data?.role === 'admin'
+async function checkAdmin(user: User): Promise<boolean> {
+    // First check user_metadata (fast, no DB query)
+    if (user.user_metadata?.role === 'admin') return true
+    if (user.app_metadata?.role === 'admin') return true
+
+    // Then check user_profiles table
+    try {
+        const { data } = await supabase
+            .from('user_profiles')
+            .select('role')
+            .eq('id', user.id)
+            .maybeSingle()
+        return data?.role === 'admin'
+    } catch {
+        return false
+    }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -32,21 +41,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        supabase.auth.getSession().then(async ({ data: { session } }) => {
+        let cancelled = false
+
+        const init = async () => {
+            const { data: { session } } = await supabase.auth.getSession()
+            if (cancelled) return
             const u = session?.user ?? null
+            const admin = u ? await checkAdmin(u) : false
+            if (cancelled) return
             setUser(u)
-            setIsAdmin(u ? await checkAdmin(u.id) : false)
+            setIsAdmin(admin)
             setLoading(false)
-        })
+        }
+
+        init()
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+            if (cancelled) return
             const u = session?.user ?? null
+            const admin = u ? await checkAdmin(u) : false
+            if (cancelled) return
             setUser(u)
-            setIsAdmin(u ? await checkAdmin(u.id) : false)
+            setIsAdmin(admin)
             setLoading(false)
         })
 
-        return () => subscription.unsubscribe()
+        return () => {
+            cancelled = true
+            subscription.unsubscribe()
+        }
     }, [])
 
     return (
