@@ -92,20 +92,78 @@ export default function Simulator() {
     const editingDrawingOriginalRef = useRef<any | null>(null)
     const [isMagnetEnabled, setIsMagnetEnabled] = useState(true) // Magnet enabled by default
 
+    // ── Undo / Redo history ───────────────────────────────────────────────────
+    const MAX_HISTORY = 50
+    const historyRef      = useRef<any[][]>([])   // array of drawing-array snapshots
+    const historyIdxRef   = useRef<number>(-1)     // pointer into historyRef
+    const historyTimerRef = useRef<number | null>(null)
+
+    /** Push a snapshot to history (debounced — groups rapid drag events into one entry). */
+    const pushHistory = useCallback((snap: any[]) => {
+        if (historyTimerRef.current !== null) window.clearTimeout(historyTimerRef.current)
+        historyTimerRef.current = window.setTimeout(() => {
+            historyTimerRef.current = null
+            const trimmed = historyRef.current.slice(0, historyIdxRef.current + 1)
+            trimmed.push(JSON.parse(JSON.stringify(snap))) // deep-clone
+            if (trimmed.length > MAX_HISTORY) trimmed.shift()
+            historyRef.current   = trimmed
+            historyIdxRef.current = trimmed.length - 1
+        }, 300)
+    }, [])
+
+    /** Wrapper used by DrawingOverlay and direct mutation handlers. Pushes history. */
+    const handleDrawingsChange = useCallback((newDrawings: any[]) => {
+        setDrawings(newDrawings)
+        pushHistory(newDrawings)
+    }, [pushHistory])
+
+    // CTRL+Z → undo, CTRL+Y / CTRL+SHIFT+Z → redo
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (!e.ctrlKey && !e.metaKey) return
+            const isZ = e.key === 'z' || e.key === 'Z'
+            const isY = e.key === 'y' || e.key === 'Y'
+            if (!isZ && !isY) return
+            // Don't hijack browser-native undo inside text inputs / textareas
+            const tag = (e.target as HTMLElement).tagName
+            if (tag === 'INPUT' || tag === 'TEXTAREA') return
+            e.preventDefault()
+            // Cancel any pending debounce timer so it doesn't overwrite the undo result
+            if (historyTimerRef.current !== null) {
+                window.clearTimeout(historyTimerRef.current)
+                historyTimerRef.current = null
+            }
+            const h   = historyRef.current
+            const idx = historyIdxRef.current
+            if ((isZ && !e.shiftKey) && idx > 0) {
+                // Undo
+                const newIdx = idx - 1
+                historyIdxRef.current = newIdx
+                setDrawings(JSON.parse(JSON.stringify(h[newIdx])))
+            } else if ((isY || (isZ && e.shiftKey)) && idx < h.length - 1) {
+                // Redo
+                const newIdx = idx + 1
+                historyIdxRef.current = newIdx
+                setDrawings(JSON.parse(JSON.stringify(h[newIdx])))
+            }
+        }
+        window.addEventListener('keydown', onKey)
+        return () => window.removeEventListener('keydown', onKey)
+    }, [])
+
     // Load drawings from localStorage when symbol changes
     useEffect(() => {
         const storageKey = `simulator_drawings_${symbol}`
         const saved = localStorage.getItem(storageKey)
-        if (saved) {
-            try {
-                setDrawings(JSON.parse(saved))
-            } catch (e) {
-                console.error('Failed to load drawings', e)
-                setDrawings([])
-            }
-        } else {
-            setDrawings([])
-        }
+        const loaded = (() => {
+            if (!saved) return []
+            try { return JSON.parse(saved) }
+            catch { return [] }
+        })()
+        setDrawings(loaded)
+        // Reset history for new symbol
+        historyRef.current    = [JSON.parse(JSON.stringify(loaded))]
+        historyIdxRef.current = 0
     }, [symbol])
 
     // Save drawings to localStorage on change (per symbol)
@@ -120,14 +178,17 @@ export default function Simulator() {
     }
 
     // Live preview: apply field changes to the chart immediately while modal is open
+    // NOTE: preview does NOT push to history — only the final save (handleDrawingUpdate) does.
     const handlePreviewDrawing = (previewDrawing: any) => {
         setDrawings(prev => prev.map(d => d.id === previewDrawing.id ? previewDrawing : d))
     }
 
-    // Save: commit the final state and close
+    // Save: commit the final state, push to history, and close
     const handleDrawingUpdate = (updatedDrawing: any) => {
         editingDrawingOriginalRef.current = null
-        setDrawings(prev => prev.map(d => d.id === updatedDrawing.id ? updatedDrawing : d))
+        const next = drawings.map(d => d.id === updatedDrawing.id ? updatedDrawing : d)
+        handleDrawingsChange(next)
+        setEditingDrawing(null)
     }
 
     // Cancel: restore the drawing to how it was before the modal was opened
@@ -142,13 +203,14 @@ export default function Simulator() {
 
     const handleDeleteDrawing = (id: string) => {
         editingDrawingOriginalRef.current = null
-        setDrawings(prev => prev.filter(d => d.id !== id))
+        handleDrawingsChange(drawings.filter(d => d.id !== id))
+        setEditingDrawing(null)
     }
 
     const handleClearAllDrawings = () => {
         if (drawings.length === 0) return
         if (confirm(`Очистити всі малюнки для ${symbol}? Це не можна відмінити.`)) {
-            setDrawings([])
+            handleDrawingsChange([])
         }
     }
 
@@ -628,7 +690,7 @@ export default function Simulator() {
                         onToolComplete={() => setActiveTool('cursor')}
                         isReplaySelectionMode={isReplaySelectionMode}
                         drawings={drawings}
-                        onDrawingsChange={setDrawings}
+                        onDrawingsChange={handleDrawingsChange}
                         onEditDrawing={handleOpenEdit}
 
                         isMagnetEnabled={isMagnetEnabled}
