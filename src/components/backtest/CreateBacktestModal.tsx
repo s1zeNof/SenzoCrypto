@@ -142,22 +142,20 @@ export default function CreateBacktestModal({ isOpen, userId, onClose, onCreated
                             <span className="text-xs text-gray-500">(необов'язково)</span>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2.5">
-                            {STRATEGY_PRESETS.map(preset => {
-                                const colors = COLOR_MAP[preset.color]
-                                const isActive = selectedPreset === preset.id
-                                const isHovered = hoveredPreset === preset.id
+                        {/* Grid + side preview panel side-by-side (avoids overflow-hidden clipping) */}
+                        <div className="flex gap-3 items-stretch">
+                            <div className="grid grid-cols-2 gap-2.5 flex-1">
+                                {STRATEGY_PRESETS.map(preset => {
+                                    const colors = COLOR_MAP[preset.color]
+                                    const isActive = selectedPreset === preset.id
 
-                                return (
-                                    <div
-                                        key={preset.id}
-                                        className="relative"
-                                        onMouseEnter={() => setHoveredPreset(preset.id)}
-                                        onMouseLeave={() => setHoveredPreset(null)}
-                                    >
+                                    return (
                                         <button
+                                            key={preset.id}
                                             type="button"
                                             onClick={() => applyPreset(preset)}
+                                            onMouseEnter={() => setHoveredPreset(preset.id)}
+                                            onMouseLeave={() => setHoveredPreset(null)}
                                             className={[
                                                 'w-full text-left p-3.5 rounded-xl border transition-all duration-150',
                                                 isActive
@@ -187,22 +185,30 @@ export default function CreateBacktestModal({ isOpen, userId, onClose, onCreated
                                                 </div>
                                             </div>
                                         </button>
+                                    )
+                                })}
+                            </div>
 
-                                        {/* SVG Preview Popover — shows on hover */}
-                                        {isHovered && (
-                                            <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 z-50 w-64 rounded-xl border border-border shadow-2xl overflow-hidden pointer-events-none animate-in fade-in zoom-in-95 duration-150">
-                                                <div className="bg-gray-950 p-1">
-                                                    {preset.svg}
-                                                </div>
-                                                <div className="bg-gray-900 px-3 py-2 border-t border-gray-800">
-                                                    <p className="text-xs font-semibold text-white">{preset.name}</p>
-                                                    <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{preset.description.split('.')[0]}.</p>
-                                                </div>
-                                            </div>
-                                        )}
+                            {/* Side preview panel — replaces floating tooltip, no overflow issues */}
+                            <div className="w-48 flex-shrink-0">
+                                {previewPreset ? (
+                                    <div className="h-full rounded-xl border border-border overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
+                                        <div className="bg-gray-950 p-1 flex-1 flex items-center justify-center">
+                                            {previewPreset.svg}
+                                        </div>
+                                        <div className="bg-gray-900 px-3 py-2 border-t border-gray-800">
+                                            <p className="text-xs font-semibold text-white">{previewPreset.name}</p>
+                                            <p className="text-xs text-gray-400 mt-0.5 leading-relaxed line-clamp-2">
+                                                {previewPreset.description.split('.')[0]}.
+                                            </p>
+                                        </div>
                                     </div>
-                                )
-                            })}
+                                ) : (
+                                    <div className="h-full rounded-xl border border-dashed border-border/40 flex items-center justify-center">
+                                        <p className="text-xs text-gray-600 text-center px-3">Наведіть на картку для перегляду</p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         {/* Selected preset full description */}
