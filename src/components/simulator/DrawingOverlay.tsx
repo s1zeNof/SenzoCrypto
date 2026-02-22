@@ -164,7 +164,8 @@ export default function DrawingOverlay({
     }, [chart, series])
 
     const getMagnetPoint = useCallback((point: Point): Point => {
-        if (!S.current.isMagnetEnabled || S.current.isCtrlPressed || !series || !chart) return point
+        // Ctrl always bypasses magnet entirely
+        if (S.current.isCtrlPressed || !series || !chart) return point
         try {
             const sp = pointToScreen(point)
             if (!sp) return point
@@ -174,7 +175,17 @@ export default function DrawingOverlay({
             if (!cd?.open) return point
             const ohlc = [cd.open, cd.high, cd.low, cd.close]
             const closest = ohlc.reduce((p: number, c: number) => Math.abs(c - point.price) < Math.abs(p - point.price) ? c : p)
-            if (Math.abs(closest - point.price) < point.price * 0.01) return { time: cd.time, price: closest }
+
+            if (S.current.isMagnetEnabled) {
+                // Strict mode (magnet ON): always snap to the nearest OHLC value
+                return { time: cd.time, price: closest }
+            } else {
+                // Soft mode (magnet OFF): snap only when the cursor is within 8px of an OHLC line
+                const closestY = series.priceToCoordinate(closest)
+                if (closestY !== null && Math.abs(closestY - sp.y) < 8) {
+                    return { time: cd.time, price: closest }
+                }
+            }
         } catch { }
         return point
     }, [chart, series, pointToScreen])
@@ -365,8 +376,17 @@ export default function DrawingOverlay({
         if (isDraggingRef.current && dragPointIdxRef.current !== null && selectedDrawingId && onDrawingsChange) {
             onDrawingsChange(drawings.map(d => {
                 if (d.id !== selectedDrawingId) return d
+                const idx = dragPointIdxRef.current!
+                // Apply magnet snapping first, then Shift angle-snap relative to the opposite handle
+                let snapped = getMagnetPoint(point)
+                if (d.points.length >= 2) {
+                    // Use the opposite endpoint as the angle-snap anchor
+                    const anchorIdx = idx === 0 ? 1 : 0
+                    const anchor = d.points[anchorIdx] ?? d.points[0]
+                    snapped = getAnglePoint(anchor, snapped)
+                }
                 const np = [...d.points]
-                np[dragPointIdxRef.current!] = point
+                np[idx] = snapped
                 return { ...d, points: np }
             }))
             return

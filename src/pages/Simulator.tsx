@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import ChartContainer from '@/components/simulator/ChartContainer'
 import DrawingOverlay, { DrawingTool } from '@/components/simulator/DrawingOverlay'
 import IndicatorsPanel from '@/components/simulator/IndicatorsPanel'
@@ -229,6 +229,31 @@ export default function Simulator() {
     // MACD State
     const [macdSettings, setMACDSettings] = useState({ fast: 12, slow: 26, signal: 9 })
     const [editingMACD, setEditingMACD] = useState(false)
+
+    // Indicator pane heights (resizable via drag handle)
+    const [rsiHeight, setRsiHeight] = useState(150)
+    const [macdHeight, setMacdHeight] = useState(150)
+
+    const startIndicatorResize = useCallback((
+        e: React.MouseEvent,
+        currentHeight: number,
+        setHeight: (h: number) => void
+    ) => {
+        e.preventDefault()
+        const startY = e.clientY
+        const startH = currentHeight
+        const onMove = (ev: MouseEvent) => {
+            // Dragging the handle UP increases pane height
+            const delta = startY - ev.clientY
+            setHeight(Math.max(60, Math.min(500, startH + delta)))
+        }
+        const onUp = () => {
+            window.removeEventListener('mousemove', onMove)
+            window.removeEventListener('mouseup', onUp)
+        }
+        window.addEventListener('mousemove', onMove)
+        window.addEventListener('mouseup', onUp)
+    }, [])
 
     // Load/Save active indicators per Symbol
     useEffect(() => {
@@ -550,7 +575,7 @@ export default function Simulator() {
 
             {/* Main Content - Full Screen Chart */}
             <div className="flex-1 relative overflow-hidden flex flex-col">
-                <div className="flex-1 relative">
+                <div className="flex-1 relative min-h-0">
                     <ChartContainer
                         symbol={symbol}
                         interval={interval}
@@ -628,24 +653,42 @@ export default function Simulator() {
 
                 {/* RSI Indicator Pane */}
                 {activeIndicators.includes('rsi') && (
-                    <div className="h-[150px] shrink-0" onDoubleClick={() => setEditingRSI(true)}>
-                        <RSIIndicator
-                            data={chartData}
-                            settings={rsiSettings}
-                            onSettingsClick={() => setEditingRSI(true)}
-                        />
+                    <div className="shrink-0 border-t border-border relative" style={{ height: rsiHeight }}>
+                        {/* Resize handle — drag upward to expand */}
+                        <div
+                            className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-10 group flex items-center justify-center"
+                            onMouseDown={e => startIndicatorResize(e, rsiHeight, setRsiHeight)}
+                        >
+                            <div className="w-8 h-0.5 rounded-full bg-border group-hover:bg-primary/60 transition-colors" />
+                        </div>
+                        <div className="pt-2 h-full" onDoubleClick={() => setEditingRSI(true)}>
+                            <RSIIndicator
+                                data={chartData}
+                                settings={rsiSettings}
+                                onSettingsClick={() => setEditingRSI(true)}
+                            />
+                        </div>
                     </div>
                 )}
 
                 {/* MACD Indicator Pane */}
                 {activeIndicators.includes('macd') && (
-                    <div className="h-[150px] shrink-0 border-t border-border" onDoubleClick={() => setEditingMACD(true)}>
-                        <MACDIndicator
-                            data={chartData}
-                            settings={macdSettings}
-                            onClose={() => handleRemoveIndicator('macd')}
-                            onSettingsClick={() => setEditingMACD(true)}
-                        />
+                    <div className="shrink-0 border-t border-border relative" style={{ height: macdHeight }}>
+                        {/* Resize handle — drag upward to expand */}
+                        <div
+                            className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-10 group flex items-center justify-center"
+                            onMouseDown={e => startIndicatorResize(e, macdHeight, setMacdHeight)}
+                        >
+                            <div className="w-8 h-0.5 rounded-full bg-border group-hover:bg-primary/60 transition-colors" />
+                        </div>
+                        <div className="pt-2 h-full" onDoubleClick={() => setEditingMACD(true)}>
+                            <MACDIndicator
+                                data={chartData}
+                                settings={macdSettings}
+                                onClose={() => handleRemoveIndicator('macd')}
+                                onSettingsClick={() => setEditingMACD(true)}
+                            />
+                        </div>
                     </div>
                 )}
 
