@@ -153,14 +153,29 @@ export default function DrawingOverlay({
                 time = t
             } else {
                 const logical = ts.coordinateToLogical(param.point.x)
-                const last = S.current.data[S.current.data.length - 1]
-                if (logical !== null && last) {
-                    const lastCoord = ts.timeToCoordinate(last.time)
-                    if (lastCoord !== null) {
-                        const lastLogical = ts.coordinateToLogical(lastCoord)
-                        if (lastLogical !== null) {
-                            time = ((last.time as number) + Math.round(logical - lastLogical) * getIntervalSeconds(S.current.interval)) as Time
+                if (logical !== null) {
+                    // Walk left from the click position to find the nearest real candle in the
+                    // SERIES (not S.current.data). This works correctly during replay where the
+                    // series only contains sliced data — ts.timeToCoordinate() returns null for
+                    // the full-data's last candle time, breaking the old approach.
+                    let anchorIdx = Math.max(0, Math.floor(logical))
+                    let anchor: any = null
+                    while (anchorIdx >= 0 && !anchor?.time) {
+                        anchor = series.dataByIndex(anchorIdx) as any
+                        if (!anchor?.time) { anchor = null; anchorIdx-- }
+                    }
+                    // Fallback to the last entry in the data prop (normal mode safety net)
+                    if (!anchor?.time) {
+                        anchor = S.current.data[S.current.data.length - 1]
+                        if (anchor?.time) {
+                            const lastCoord = ts.timeToCoordinate(anchor.time)
+                            const lastLogical = lastCoord !== null ? ts.coordinateToLogical(lastCoord) : null
+                            if (lastLogical !== null) {
+                                time = ((anchor.time as number) + Math.round(logical - lastLogical) * getIntervalSeconds(S.current.interval)) as Time
+                            }
                         }
+                    } else {
+                        time = ((anchor.time as number) + Math.round(logical - anchorIdx) * getIntervalSeconds(S.current.interval)) as Time
                     }
                 }
             }
