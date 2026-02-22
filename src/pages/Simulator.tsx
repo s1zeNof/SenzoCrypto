@@ -88,6 +88,8 @@ export default function Simulator() {
     // Lifted Drawing State for Persistence & Editing
     const [drawings, setDrawings] = useState<any[]>([])
     const [editingDrawing, setEditingDrawing] = useState<any | null>(null)
+    // Store the drawing's original state when the modal opens so we can restore on cancel
+    const editingDrawingOriginalRef = useRef<any | null>(null)
     const [isMagnetEnabled, setIsMagnetEnabled] = useState(true) // Magnet enabled by default
 
     // Load drawings from localStorage when symbol changes
@@ -112,11 +114,34 @@ export default function Simulator() {
         localStorage.setItem(storageKey, JSON.stringify(drawings))
     }, [drawings, symbol])
 
+    const handleOpenEdit = (drawing: any) => {
+        editingDrawingOriginalRef.current = drawing // snapshot before any live changes
+        setEditingDrawing(drawing)
+    }
+
+    // Live preview: apply field changes to the chart immediately while modal is open
+    const handlePreviewDrawing = (previewDrawing: any) => {
+        setDrawings(prev => prev.map(d => d.id === previewDrawing.id ? previewDrawing : d))
+    }
+
+    // Save: commit the final state and close
     const handleDrawingUpdate = (updatedDrawing: any) => {
+        editingDrawingOriginalRef.current = null
         setDrawings(prev => prev.map(d => d.id === updatedDrawing.id ? updatedDrawing : d))
     }
 
+    // Cancel: restore the drawing to how it was before the modal was opened
+    const handleCancelEdit = () => {
+        const original = editingDrawingOriginalRef.current
+        if (original) {
+            setDrawings(prev => prev.map(d => d.id === original.id ? original : d))
+            editingDrawingOriginalRef.current = null
+        }
+        setEditingDrawing(null)
+    }
+
     const handleDeleteDrawing = (id: string) => {
+        editingDrawingOriginalRef.current = null
         setDrawings(prev => prev.filter(d => d.id !== id))
     }
 
@@ -566,7 +591,7 @@ export default function Simulator() {
                         isReplaySelectionMode={isReplaySelectionMode}
                         drawings={drawings}
                         onDrawingsChange={setDrawings}
-                        onEditDrawing={setEditingDrawing}
+                        onEditDrawing={handleOpenEdit}
 
                         isMagnetEnabled={isMagnetEnabled}
                         interval={interval}
@@ -579,7 +604,8 @@ export default function Simulator() {
                             drawing={editingDrawing}
                             onSave={handleDrawingUpdate}
                             onDelete={handleDeleteDrawing}
-                            onClose={() => setEditingDrawing(null)}
+                            onClose={handleCancelEdit}
+                            onPreview={handlePreviewDrawing}
                         />
                     )}
 

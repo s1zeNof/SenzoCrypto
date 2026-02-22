@@ -3,6 +3,27 @@ import { createChart, ColorType, IChartApi, ISeriesApi, Time, CrosshairMode } fr
 import { calculateRSI } from '@/utils/indicators'
 import type { Indicator } from './IndicatorsModal'
 
+// Interval duration in seconds (used for whitespace future bars + replay seek)
+const INTERVAL_SECS: Record<string, number> = {
+    '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1800,
+    '1h': 3600, '2h': 7200, '4h': 14400, '6h': 21600,
+    '8h': 28800, '12h': 43200, '1d': 86400, '3d': 259200, '1w': 604800,
+}
+
+// Append N "whitespace" entries after the last candle so the time-axis always
+// shows future labels (lightweight-charts renders no candle for whitespace rows
+// but DOES draw the time scale labels). We store only real candles in fullDataRef
+// to keep replay logic clean.
+function withFuturePadding(candles: any[], iv: string, bars = 120): any[] {
+    if (!candles.length) return candles
+    const ivSec = INTERVAL_SECS[iv] ?? 3600
+    const lastTime = candles[candles.length - 1].time as number
+    const future = Array.from({ length: bars }, (_, i) => ({
+        time: (lastTime + (i + 1) * ivSec) as Time,
+    }))
+    return [...candles, ...future]
+}
+
 interface ChartContainerProps {
     symbol: string
     interval: string
@@ -34,7 +55,11 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
     const isReplayModeRef = useRef(false)
     const replayIndexRef = useRef<number>(-1) // Track current replay candle index
     const pendingReplayTimeRef = useRef<Time | null>(null)
+    const intervalRef = useRef(interval) // always-current interval for closures
     const [isLoading, setIsLoading] = useState(false)
+
+    // Keep intervalRef in sync whenever the prop changes
+    useEffect(() => { intervalRef.current = interval }, [interval])
 
     useEffect(() => {
         if (!chartContainerRef.current) return
@@ -53,7 +78,9 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
             timeScale: {
                 timeVisible: true,
                 secondsVisible: false,
-                // Allow the user to scroll and draw past the last candle (into the future)
+                // Allow scrolling and drawing into the future area.
+                // 120 whitespace bars are also appended to the series data so the
+                // time-axis always shows future labels (not just where candles exist).
                 rightOffset: 20,
                 fixRightEdge: false,
             },
@@ -99,7 +126,8 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
                     isReplayModeRef.current = false
                     replayIndexRef.current = -1
                     pendingReplayTimeRef.current = null // cancel any queued restore
-                    candleSeries.setData(fullDataRef.current)
+                    // Restore full data with future padding so the time-axis labels come back
+                    candleSeries.setData(withFuturePadding(fullDataRef.current, intervalRef.current) as any)
                     chart.timeScale().fitContent()
                 },
                 getCurrentTime: () => {
@@ -226,11 +254,13 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
                     let idx = allCandles.findIndex(d => (d.time as number) >= pendingTime)
                     if (idx === -1) idx = allCandles.length - 1
                     replayIndexRef.current = idx
+                    // In replay mode we show only the slice up to the replay point (no future padding)
                     candleSeriesRef.current?.setData(allCandles.slice(0, idx + 1))
                     chartRef.current?.timeScale().fitContent()
                     onDataUpdate?.(allCandles)
                 } else if (!isReplayModeRef.current) {
-                    candleSeriesRef.current?.setData(allCandles)
+                    // Normal mode: add 120 whitespace bars so time-axis labels extend into the future
+                    candleSeriesRef.current?.setData(withFuturePadding(allCandles, interval) as any)
                     onDataUpdate?.(allCandles)
                 }
             } catch (error) {

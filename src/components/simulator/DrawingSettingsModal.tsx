@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X, Trash2 } from 'lucide-react'
 
 interface DrawingSettingsModalProps {
@@ -6,6 +6,8 @@ interface DrawingSettingsModalProps {
     onSave: (updatedDrawing: any) => void
     onDelete: (id: string) => void
     onClose: () => void
+    /** Called on every field change so the chart updates in real-time */
+    onPreview?: (drawing: any) => void
 }
 
 const TOOL_LABELS: Record<string, string> = {
@@ -22,7 +24,7 @@ const TOOL_LABELS: Record<string, string> = {
     text: 'Text',
 }
 
-export default function DrawingSettingsModal({ drawing, onSave, onDelete, onClose }: DrawingSettingsModalProps) {
+export default function DrawingSettingsModal({ drawing, onSave, onDelete, onClose, onPreview }: DrawingSettingsModalProps) {
     const [color, setColor] = useState(drawing.color || '#2962FF')
     const [lineWidth, setLineWidth] = useState(drawing.lineWidth || 2)
     const [lineStyle, setLineStyle] = useState<'solid' | 'dashed' | 'dotted'>(drawing.lineStyle || 'solid')
@@ -30,6 +32,7 @@ export default function DrawingSettingsModal({ drawing, onSave, onDelete, onClos
     const [label, setLabel] = useState(drawing.label || '')
     const [points, setPoints] = useState(drawing.points || [])
 
+    // Sync state when a new drawing is passed (e.g. user switches selection)
     useEffect(() => {
         setColor(drawing.color || '#2962FF')
         setLineWidth(drawing.lineWidth || 2)
@@ -37,7 +40,16 @@ export default function DrawingSettingsModal({ drawing, onSave, onDelete, onClos
         setText(drawing.text || '')
         setLabel(drawing.label || '')
         setPoints(drawing.points || [])
-    }, [drawing])
+    }, [drawing.id]) // only re-sync when a DIFFERENT drawing is opened
+
+    // ── Live preview ──────────────────────────────────────────────────────────
+    // Skip first render (state already matches current drawing) and call
+    // onPreview on every subsequent change so the chart updates in real-time.
+    const isFirstRender = useRef(true)
+    useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
+        onPreview?.({ ...drawing, color, lineWidth, lineStyle, text, label, points })
+    }, [color, lineWidth, lineStyle, text, label, points]) // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleSave = () => {
         onSave({ ...drawing, color, lineWidth, lineStyle, text, label, points })
@@ -55,7 +67,7 @@ export default function DrawingSettingsModal({ drawing, onSave, onDelete, onClos
     const typeName = TOOL_LABELS[drawing.type] || drawing.type
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 animate-in fade-in">
             <div className="bg-[#1E222D] border border-[#2A2E39] rounded-xl shadow-2xl w-[380px] overflow-hidden text-[#D9D9D9] animate-in zoom-in-95 duration-150">
                 {/* Header */}
                 <div className="flex justify-between items-center px-4 py-3 border-b border-[#2A2E39]">

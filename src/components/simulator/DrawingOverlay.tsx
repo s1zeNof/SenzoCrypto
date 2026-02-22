@@ -293,6 +293,16 @@ export default function DrawingOverlay({
         return foundId
     }, [chart, pointToScreen, priceToScreenY])
 
+    // ── Cursor: change canvas cursor when hovering over a drawing ─────────────
+    // The overlay div is pointer-events-none so we must modify the canvas directly.
+    useEffect(() => {
+        if (!overlayRef.current) return
+        // The chart canvases are siblings inside the same parent container
+        const canvases = overlayRef.current.parentElement?.querySelectorAll('canvas')
+        const cursor = (hoveredDrawingId && activeTool === 'cursor') ? 'pointer' : ''
+        canvases?.forEach(canvas => { (canvas as HTMLElement).style.cursor = cursor })
+    }, [hoveredDrawingId, activeTool])
+
     // ── Mouse button tracking (enables drag detection) ────────────────────────
     useEffect(() => {
         const onDown = () => {
