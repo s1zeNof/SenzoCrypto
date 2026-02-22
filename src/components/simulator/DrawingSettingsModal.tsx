@@ -22,6 +22,8 @@ const TOOL_LABELS: Record<string, string> = {
     fibonacci: 'Fibonacci',
     measure: 'Price Range',
     text: 'Text',
+    long:  'Довга позиція',
+    short: 'Коротка позиція',
 }
 
 export default function DrawingSettingsModal({ drawing, onSave, onDelete, onClose, onPreview }: DrawingSettingsModalProps) {
@@ -31,6 +33,10 @@ export default function DrawingSettingsModal({ drawing, onSave, onDelete, onClos
     const [text, setText] = useState(drawing.text || '')
     const [label, setLabel] = useState(drawing.label || '')
     const [points, setPoints] = useState(drawing.points || [])
+    // ─── Position tool fields ───────────────────────────────────────────────
+    const [stopLoss,   setStopLoss]   = useState<string>((drawing.stopLoss   ?? '').toString())
+    const [takeProfit, setTakeProfit] = useState<string>((drawing.takeProfit ?? '').toString())
+    const [quantity,   setQuantity]   = useState<string>((drawing.quantity   ?? 1).toString())
 
     // Sync state when a new drawing is passed (e.g. user switches selection)
     useEffect(() => {
@@ -40,19 +46,36 @@ export default function DrawingSettingsModal({ drawing, onSave, onDelete, onClos
         setText(drawing.text || '')
         setLabel(drawing.label || '')
         setPoints(drawing.points || [])
+        setStopLoss((drawing.stopLoss   ?? '').toString())
+        setTakeProfit((drawing.takeProfit ?? '').toString())
+        setQuantity((drawing.quantity   ?? 1).toString())
     }, [drawing.id]) // only re-sync when a DIFFERENT drawing is opened
 
+    const isPosition = drawing.type === 'long' || drawing.type === 'short'
+
     // ── Live preview ──────────────────────────────────────────────────────────
-    // Skip first render (state already matches current drawing) and call
-    // onPreview on every subsequent change so the chart updates in real-time.
     const isFirstRender = useRef(true)
     useEffect(() => {
         if (isFirstRender.current) { isFirstRender.current = false; return }
-        onPreview?.({ ...drawing, color, lineWidth, lineStyle, text, label, points })
-    }, [color, lineWidth, lineStyle, text, label, points]) // eslint-disable-line react-hooks/exhaustive-deps
+        onPreview?.({
+            ...drawing, color, lineWidth, lineStyle, text, label, points,
+            ...(isPosition && {
+                stopLoss:   parseFloat(stopLoss)   || undefined,
+                takeProfit: parseFloat(takeProfit) || undefined,
+                quantity:   parseFloat(quantity)   || 1,
+            }),
+        })
+    }, [color, lineWidth, lineStyle, text, label, points, stopLoss, takeProfit, quantity]) // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleSave = () => {
-        onSave({ ...drawing, color, lineWidth, lineStyle, text, label, points })
+        onSave({
+            ...drawing, color, lineWidth, lineStyle, text, label, points,
+            ...(isPosition && {
+                stopLoss:   parseFloat(stopLoss)   || drawing.stopLoss,
+                takeProfit: parseFloat(takeProfit) || drawing.takeProfit,
+                quantity:   parseFloat(quantity)   || 1,
+            }),
+        })
         onClose()
     }
 
@@ -62,9 +85,9 @@ export default function DrawingSettingsModal({ drawing, onSave, onDelete, onClos
         setPoints(np)
     }
 
-    const isText = drawing.type === 'text'
+    const isText       = drawing.type === 'text'
     const isHorizontal = drawing.type === 'horizontal'
-    const typeName = TOOL_LABELS[drawing.type] || drawing.type
+    const typeName     = TOOL_LABELS[drawing.type] || drawing.type
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 animate-in fade-in">
@@ -104,6 +127,48 @@ export default function DrawingSettingsModal({ drawing, onSave, onDelete, onClos
                                 className="w-full bg-[#2A2E39] border border-transparent focus:border-[#2962FF] rounded px-3 py-2 text-sm text-white outline-none"
                                 placeholder="Напр. Support / Resistance..."
                             />
+                        </div>
+                    )}
+
+                    {/* Position tool: SL / TP / Quantity */}
+                    {isPosition && (
+                        <div>
+                            <label className="text-xs text-gray-400 uppercase font-bold block mb-2">Параметри позиції</label>
+                            <div className="space-y-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs text-red-400 w-28 flex-shrink-0">Stop Loss</span>
+                                    <input type="number" value={stopLoss} step="0.01"
+                                        onChange={e => setStopLoss(e.target.value)}
+                                        className="flex-1 bg-[#2A2E39] border border-transparent focus:border-red-400 rounded px-2 py-1.5 text-xs text-white outline-none" />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs text-green-400 w-28 flex-shrink-0">Take Profit</span>
+                                    <input type="number" value={takeProfit} step="0.01"
+                                        onChange={e => setTakeProfit(e.target.value)}
+                                        className="flex-1 bg-[#2A2E39] border border-transparent focus:border-green-400 rounded px-2 py-1.5 text-xs text-white outline-none" />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-400 w-28 flex-shrink-0">Кількість</span>
+                                    <input type="number" value={quantity} step="0.01" min="0"
+                                        onChange={e => setQuantity(e.target.value)}
+                                        className="flex-1 bg-[#2A2E39] border border-transparent focus:border-[#2962FF] rounded px-2 py-1.5 text-xs text-white outline-none" />
+                                </div>
+                                {/* R:R display */}
+                                {stopLoss && takeProfit && points[0] && (() => {
+                                    const entry = points[0].price
+                                    const sl = parseFloat(stopLoss), tp = parseFloat(takeProfit)
+                                    const risk = Math.abs(entry - sl), reward = Math.abs(tp - entry)
+                                    if (!risk) return null
+                                    return (
+                                        <div className="flex items-center gap-2 pt-1 border-t border-[#2A2E39]">
+                                            <span className="text-xs text-gray-500 w-28">R:R</span>
+                                            <span className="text-xs font-mono font-bold text-white">
+                                                1 : {(reward / risk).toFixed(2)}
+                                            </span>
+                                        </div>
+                                    )
+                                })()}
+                            </div>
                         </div>
                     )}
 

@@ -5,6 +5,7 @@ import { Trash2, Settings, Copy, Lock, LockOpen, Scissors } from 'lucide-react'
 export type DrawingTool =
     | 'cursor' | 'line' | 'ray' | 'extended' | 'horizontal' | 'vertical'
     | 'zone' | 'text' | 'measure' | 'arrow' | 'channel' | 'fibonacci'
+    | 'long' | 'short'
 
 interface Point {
     time: Time
@@ -21,6 +22,10 @@ interface Drawing {
     text?: string
     locked?: boolean
     label?: string
+    // ─── Position tool fields (long / short) ───────────────────────────────
+    stopLoss?:   number   // stop-loss price level
+    takeProfit?: number   // take-profit price level
+    quantity?:   number   // position size (units / lots)
 }
 
 interface DrawingOverlayProps {
@@ -266,6 +271,20 @@ export default function DrawingOverlay({
                     }
                     break
                 }
+                case 'long':
+                case 'short': {
+                    if (spts.length >= 2) {
+                        const rx  = Math.min(spts[0].x, spts[1].x)
+                        const rw  = Math.abs(spts[0].x - spts[1].x)
+                        const ep  = d.points[0].price
+                        const slY = priceToScreenY((d as any).stopLoss   ?? ep) ?? spts[0].y
+                        const tpY = priceToScreenY((d as any).takeProfit ?? ep) ?? spts[0].y
+                        const ry  = Math.min(tpY, slY)
+                        const rh  = Math.abs(tpY - slY)
+                        if (mx >= rx && mx <= rx + rw && my >= ry && my <= ry + rh) dist = 0
+                    }
+                    break
+                }
                 case 'fibonacci': {
                     if (spts.length >= 2) {
                         const range = d.points[0].price - d.points[1].price
@@ -504,11 +523,28 @@ export default function DrawingOverlay({
                     onToolComplete()
                     return
                 }
+                // ── Long / Short position tool: auto-calc SL & TP from entry ──
+                if (activeTool === 'long' || activeTool === 'short') {
+                    const entry  = point.price
+                    const isLong = activeTool === 'long'
+                    const nd: Drawing = {
+                        id: crypto.randomUUID(), type: activeTool,
+                        points: [point],
+                        color:      isLong ? '#26A69A' : '#EF5350',
+                        lineWidth:  1,
+                        lineStyle:  'solid',
+                        stopLoss:   isLong ? entry * 0.98 : entry * 1.02,
+                        takeProfit: isLong ? entry * 1.04 : entry * 0.96,
+                        quantity:   1,
+                    }
+                    setCurrentDrawing(nd)
+                    return
+                }
                 setCurrentDrawing({ id: crypto.randomUUID(), type: activeTool, points: [point], color: '#2962FF', lineWidth: 2, lineStyle: 'solid' })
             } else {
                 const pts = currentDrawing.points || []
                 let finalPoint = getMagnetPoint(rawPoint)
-                if (!['zone', 'measure', 'channel'].includes(activeTool)) {
+                if (!['zone', 'measure', 'channel', 'long', 'short'].includes(activeTool)) {
                     finalPoint = getAnglePoint(pts[0], finalPoint)
                 }
                 const newPts = [...pts, finalPoint]
@@ -804,6 +840,78 @@ export default function DrawingOverlay({
                             {d.text || ''}
                         </text>
                         {isActive && <Handle cx={txPos.x} cy={tyPos} idx={0} />}
+                    </g>
+                )
+            }
+
+            case 'long':
+            case 'short': {
+                if (screenPoints.length < 2)
+                    return screenPoints[0] ? <circle key={d.id} cx={screenPoints[0].x} cy={screenPoints[0].y} r={4} fill={style.stroke} /> : null
+
+                const x0         = Math.min(screenPoints[0].x, screenPoints[1].x)
+                const x1         = Math.max(screenPoints[0].x, screenPoints[1].x)
+                const w          = x1 - x0
+                const isLong     = d.type === 'long'
+                const entryPrice = pointsToRender[0].price
+                const slPrice    = (d as any).stopLoss   ?? (isLong ? entryPrice * 0.98 : entryPrice * 1.02)
+                const tpPrice    = (d as any).takeProfit ?? (isLong ? entryPrice * 1.04 : entryPrice * 0.96)
+                const entryY     = priceToScreenY(entryPrice)
+                const slY        = priceToScreenY(slPrice)
+                const tpY        = priceToScreenY(tpPrice)
+                if (entryY === null || slY === null || tpY === null) return null
+
+                const slZoneTop  = Math.min(entryY, slY)
+                const slZoneH    = Math.abs(entryY - slY)
+                const tpZoneTop  = Math.min(entryY, tpY)
+                const tpZoneH    = Math.abs(entryY - tpY)
+
+                const risk   = Math.abs(entryPrice - slPrice)
+                const reward = Math.abs(tpPrice - entryPrice)
+                const rr     = risk > 0 ? (reward / risk).toFixed(2) : '∞'
+                const slPct  = ((slPrice - entryPrice) / entryPrice * 100).toFixed(2)
+                const tpPct  = ((tpPrice - entryPrice) / entryPrice * 100).toFixed(2)
+                const entryColor = isLong ? '#26A69A' : '#EF5350'
+
+                return (
+                    <g key={d.id || 'preview'} filter={glowFilter} className="pointer-events-none">
+                        {/* SL zone — always red */}
+                        <rect x={x0} y={slZoneTop} width={w} height={slZoneH}
+                            fill="#EF5350" fillOpacity={isSelected ? 0.22 : 0.13}
+                            stroke="#EF5350" strokeWidth={0.5} />
+                        {/* TP zone — always green */}
+                        <rect x={x0} y={tpZoneTop} width={w} height={tpZoneH}
+                            fill="#26A69A" fillOpacity={isSelected ? 0.22 : 0.13}
+                            stroke="#26A69A" strokeWidth={0.5} />
+                        {/* Entry line */}
+                        <line x1={x0} y1={entryY} x2={x1} y2={entryY}
+                            stroke={entryColor} strokeWidth={2} />
+                        {/* SL line (dashed) */}
+                        <line x1={x0} y1={slY} x2={x1} y2={slY}
+                            stroke="#EF5350" strokeWidth={1} strokeDasharray="5,3" />
+                        {/* TP line (dashed) */}
+                        <line x1={x0} y1={tpY} x2={x1} y2={tpY}
+                            stroke="#26A69A" strokeWidth={1} strokeDasharray="5,3" />
+                        {/* Price labels on right edge */}
+                        <text x={x1 + 5} y={entryY + 4} fill={entryColor} fontSize={10} fontFamily="monospace">
+                            {entryPrice.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                        </text>
+                        <text x={x1 + 5} y={tpY + 4} fill="#26A69A" fontSize={10} fontFamily="monospace">
+                            {Number(tpPct) >= 0 ? '+' : ''}{tpPct}%
+                        </text>
+                        <text x={x1 + 5} y={slY + 4} fill="#EF5350" fontSize={10} fontFamily="monospace">
+                            {Number(slPct) >= 0 ? '+' : ''}{slPct}%
+                        </text>
+                        {/* R:R label centred in TP zone */}
+                        {tpZoneH > 16 && w > 50 && (
+                            <text x={x0 + w / 2} y={tpZoneTop + tpZoneH / 2 + 4}
+                                textAnchor="middle" fill="#26A69A" fontSize={11}
+                                fontFamily="monospace" fontWeight="600">
+                                {isLong ? '▲' : '▼'} R:R {rr}
+                            </text>
+                        )}
+                        {/* Control handles */}
+                        {isActive && screenPoints.map((p, i) => <Handle key={i} cx={p.x} cy={p.y} idx={i} />)}
                     </g>
                 )
             }

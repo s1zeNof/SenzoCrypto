@@ -254,6 +254,15 @@ export default function Simulator() {
             tools: [
                 { id: 'measure', label: 'Price Range', icon: <Settings className="w-4 h-4" /> },
             ]
+        },
+        {
+            id: 'positions',
+            icon: <TrendingUp className="w-5 h-5 text-green-400" />,
+            label: 'Позиції',
+            tools: [
+                { id: 'long',  label: 'Довга позиція',   icon: <TrendingUp   className="w-4 h-4 text-green-400" /> },
+                { id: 'short', label: 'Коротка позиція', icon: <TrendingDown className="w-4 h-4 text-red-400"   /> },
+            ]
         }
     ]
 
