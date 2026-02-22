@@ -58,6 +58,11 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
     const intervalRef = useRef(interval) // always-current interval for closures
     const [isLoading, setIsLoading] = useState(false)
 
+    // Keep onDataUpdate in a ref so the once-created replay closures always call
+    // the latest version without needing the chart useEffect to re-run.
+    const onDataUpdateRef = useRef(onDataUpdate)
+    useEffect(() => { onDataUpdateRef.current = onDataUpdate }, [onDataUpdate])
+
     // Keep intervalRef in sync whenever the prop changes
     useEffect(() => { intervalRef.current = interval }, [interval])
 
@@ -112,6 +117,8 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
                         const slicedData = fullDataRef.current.slice(0, index + 1)
                         candleSeries.setData(slicedData)
                         chart.timeScale().fitContent()
+                        // Notify indicators: only historical data should be visible
+                        onDataUpdateRef.current?.(slicedData)
                     }
                 },
                 nextCandle: () => {
@@ -120,6 +127,8 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
                     if (nextIndex < fullDataRef.current.length) {
                         replayIndexRef.current = nextIndex
                         candleSeries.update(fullDataRef.current[nextIndex])
+                        // Push updated slice to all indicators so they advance with replay
+                        onDataUpdateRef.current?.(fullDataRef.current.slice(0, nextIndex + 1))
                     }
                 },
                 stopReplay: () => {
@@ -129,6 +138,8 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
                     // Restore full data with future padding so the time-axis labels come back
                     candleSeries.setData(withFuturePadding(fullDataRef.current, intervalRef.current) as any)
                     chart.timeScale().fitContent()
+                    // Restore full dataset to all indicators
+                    onDataUpdateRef.current?.(fullDataRef.current)
                 },
                 getCurrentTime: () => {
                     const idx = replayIndexRef.current
@@ -255,9 +266,11 @@ export default function ChartContainer({ symbol, interval, onChartReady, onDataU
                     if (idx === -1) idx = allCandles.length - 1
                     replayIndexRef.current = idx
                     // In replay mode we show only the slice up to the replay point (no future padding)
-                    candleSeriesRef.current?.setData(allCandles.slice(0, idx + 1))
+                    const replaySlice = allCandles.slice(0, idx + 1)
+                    candleSeriesRef.current?.setData(replaySlice)
                     chartRef.current?.timeScale().fitContent()
-                    onDataUpdate?.(allCandles)
+                    // Pass only historical slice to indicators (not the full future-containing dataset)
+                    onDataUpdate?.(replaySlice)
                 } else if (!isReplayModeRef.current) {
                     // Normal mode: add 120 whitespace bars so time-axis labels extend into the future
                     candleSeriesRef.current?.setData(withFuturePadding(allCandles, interval) as any)
