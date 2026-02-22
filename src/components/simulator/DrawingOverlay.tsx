@@ -100,6 +100,12 @@ export default function DrawingOverlay({
     const dragPointIdxRef  = useRef<number | null>(null)
     const dragInitRef      = useRef(false) // prevents double-start
 
+    // Keyboard state as IMMEDIATE refs — updated synchronously in the keydown/keyup handler
+    // so that mouse-move events fired before the next React render still see the correct value.
+    // (React state updates are async; using only S.current.isShiftPressed causes a 1-frame lag.)
+    const isShiftPressedRef = useRef(false)
+    const isCtrlPressedRef  = useRef(false)
+
     // ── Helpers ────────────────────────────────────────────────────────────────
     const getIntervalSeconds = (iv: string) => {
         const num = parseInt(iv) || 1
@@ -164,8 +170,8 @@ export default function DrawingOverlay({
     }, [chart, series])
 
     const getMagnetPoint = useCallback((point: Point): Point => {
-        // Ctrl always bypasses magnet entirely
-        if (S.current.isCtrlPressed || !series || !chart) return point
+        // Ctrl always bypasses magnet entirely (use immediate ref — not S.current — to avoid async-state lag)
+        if (isCtrlPressedRef.current || !series || !chart) return point
         try {
             const sp = pointToScreen(point)
             if (!sp) return point
@@ -191,7 +197,8 @@ export default function DrawingOverlay({
     }, [chart, series, pointToScreen])
 
     const getAnglePoint = useCallback((start: Point, cur: Point): Point => {
-        if (!S.current.isShiftPressed) return cur
+        // Use immediate ref — not S.current — to avoid the 1-frame async-state lag in React 18
+        if (!isShiftPressedRef.current) return cur
         const ss = pointToScreen(start)
         const cs = pointToScreen(cur)
         if (!ss || !cs) return cur
@@ -342,8 +349,8 @@ export default function DrawingOverlay({
     // ── Keyboard shortcuts ────────────────────────────────────────────────────
     useEffect(() => {
         const dn = (e: KeyboardEvent) => {
-            if (e.key === 'Shift') setIsShiftPressed(true)
-            if (e.key === 'Control') setIsCtrlPressed(true)
+            if (e.key === 'Shift')   { isShiftPressedRef.current = true;  setIsShiftPressed(true)  }
+            if (e.key === 'Control') { isCtrlPressedRef.current  = true;  setIsCtrlPressed(true)   }
             if (e.key === 'Escape') { setSelectedDrawingId(null); setCurrentDrawing(null) }
             if ((e.key === 'Delete' || e.key === 'Backspace') && S.current.selectedDrawingId) {
                 const sel = S.current.drawings.find(d => d.id === S.current.selectedDrawingId)
@@ -354,8 +361,8 @@ export default function DrawingOverlay({
             }
         }
         const up = (e: KeyboardEvent) => {
-            if (e.key === 'Shift') setIsShiftPressed(false)
-            if (e.key === 'Control') setIsCtrlPressed(false)
+            if (e.key === 'Shift')   { isShiftPressedRef.current = false; setIsShiftPressed(false) }
+            if (e.key === 'Control') { isCtrlPressedRef.current  = false; setIsCtrlPressed(false)  }
         }
         window.addEventListener('keydown', dn)
         window.addEventListener('keyup', up)

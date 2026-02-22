@@ -32,7 +32,7 @@ export default function RSIIndicator({ data, settings, onSettingsClick }: RSIInd
                 horzLines: { color: 'rgba(42, 46, 57, 0.5)' },
             },
             width: chartContainerRef.current.clientWidth,
-            height: 150,
+            height: chartContainerRef.current.clientHeight || 150,
             timeScale: {
                 timeVisible: true,
                 secondsVisible: false,
@@ -73,6 +73,17 @@ export default function RSIIndicator({ data, settings, onSettingsClick }: RSIInd
             },
         })
 
+        // ResizeObserver keeps the chart in sync when the pane is dragged to a new height
+        const ro = new ResizeObserver(() => {
+            if (chartContainerRef.current && chartRef.current) {
+                chartRef.current.applyOptions({
+                    width: chartContainerRef.current.clientWidth,
+                    height: chartContainerRef.current.clientHeight,
+                })
+            }
+        })
+        ro.observe(chartContainerRef.current)
+
         const handleResize = () => {
             if (chartContainerRef.current) {
                 chart.applyOptions({
@@ -84,6 +95,7 @@ export default function RSIIndicator({ data, settings, onSettingsClick }: RSIInd
         window.addEventListener('resize', handleResize)
 
         return () => {
+            ro.disconnect()
             window.removeEventListener('resize', handleResize)
             chart.remove()
         }
@@ -139,7 +151,7 @@ export default function RSIIndicator({ data, settings, onSettingsClick }: RSIInd
     }, [data, settings])
 
     return (
-        <div className="border-t border-border bg-background/50 relative">
+        <div className="bg-background/50 relative h-full">
             {/* Header */}
             <div className="absolute top-2 left-2 z-10 flex items-center gap-2">
                 <span className="text-xs font-bold text-gray-400 bg-surface/80 backdrop-blur-sm px-2 py-1 rounded">
@@ -154,8 +166,8 @@ export default function RSIIndicator({ data, settings, onSettingsClick }: RSIInd
                 </button>
             </div>
 
-            {/* Chart */}
-            <div ref={chartContainerRef} className="w-full" />
+            {/* Chart fills full pane height */}
+            <div ref={chartContainerRef} className="w-full h-full" />
         </div>
     )
 }
