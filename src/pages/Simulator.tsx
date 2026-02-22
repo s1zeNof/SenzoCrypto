@@ -590,26 +590,56 @@ export default function Simulator() {
 
                 {/* Replay Controls (Visible only when active AND NOT in selection mode) */}
                 {isReplayActive && !isReplaySelectionMode && (
-                    <div className="flex items-center gap-2 bg-surface border border-border rounded-lg px-2 py-1 animate-in fade-in slide-in-from-top-2">
-                        <button onClick={() => setIsReplayPaused(!isReplayPaused)} className="p-1 hover:text-white text-primary">
+                    <div className="flex items-center gap-1.5 bg-surface border border-border rounded-lg px-2 py-1 animate-in fade-in slide-in-from-top-2">
+                        {/* Play / Pause */}
+                        <button
+                            onClick={() => setIsReplayPaused(!isReplayPaused)}
+                            className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-primary transition-colors"
+                        >
                             {isReplayPaused ? '▶' : '⏸'}
                         </button>
-                        <button onClick={() => replayApi?.nextCandle()} className="p-1 hover:text-white text-gray-400">
+                        {/* Step forward */}
+                        <button
+                            onClick={() => replayApi?.nextCandle()}
+                            className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                        >
                             ⏭
                         </button>
-                        <select
-                            value={replaySpeed}
-                            onChange={(e) => setReplaySpeed(Number(e.target.value))}
-                            className="bg-transparent text-xs text-gray-400 outline-none"
+
+                        <div className="w-px h-4 bg-border mx-0.5" />
+
+                        {/* Speed pill buttons */}
+                        <div className="flex items-center gap-0.5">
+                            {([
+                                { label: '0.5×', ms: 2000 },
+                                { label: '1×',   ms: 1000 },
+                                { label: '2×',   ms: 500  },
+                                { label: '5×',   ms: 200  },
+                                { label: '10×',  ms: 50   },
+                            ] as const).map(s => (
+                                <button
+                                    key={s.ms}
+                                    onClick={() => setReplaySpeed(s.ms)}
+                                    className={`px-1.5 py-0.5 text-[11px] font-medium rounded transition-colors ${
+                                        replaySpeed === s.ms
+                                            ? 'bg-primary text-white shadow-sm shadow-primary/30'
+                                            : 'text-gray-500 hover:text-white hover:bg-white/10'
+                                    }`}
+                                >
+                                    {s.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="w-px h-4 bg-border mx-0.5" />
+
+                        {/* Stop replay */}
+                        <button
+                            onClick={handleReplayClick}
+                            title="Зупинити Replay"
+                            className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-500/15 text-gray-400 hover:text-red-400 transition-colors"
                         >
-                            <option value={1000}>1x</option>
-                            <option value={500}>2x</option>
-                            <option value={200}>5x</option>
-                            <option value={50}>10x</option>
-                        </select>
-                        <div className="w-px h-4 bg-border mx-1" />
-                        <button onClick={handleReplayClick} className="p-1 hover:text-red-500 text-gray-400">
-                            <X className="w-4 h-4" />
+                            <X className="w-3.5 h-3.5" />
                         </button>
                     </div>
                 )}
@@ -680,13 +710,22 @@ export default function Simulator() {
 
                         isMagnetEnabled={isMagnetEnabled}
                         onDoubleClick={() => {
-                            // Expand collapsed indicator panes (like TradingView double-click)
-                            const hasIndicators = activeIndicators.some(id => id === 'rsi' || id === 'macd')
-                            if (hasIndicators) {
-                                if (isRsiCollapsed)  setIsRsiCollapsed(false)
-                                if (isMacdCollapsed) setIsMacdCollapsed(false)
+                            const hasRsi  = activeIndicators.includes('rsi')
+                            const hasMacd = activeIndicators.includes('macd')
+                            const anyActive = hasRsi || hasMacd
+                            if (!anyActive) {
+                                // No indicators → open the panel to add one
+                                setShowIndicators(true)
+                                return
+                            }
+                            // Toggle: if any pane is visible (expanded) → collapse all; otherwise expand all
+                            const anyExpanded = (hasRsi && !isRsiCollapsed) || (hasMacd && !isMacdCollapsed)
+                            if (anyExpanded) {
+                                if (hasRsi)  setIsRsiCollapsed(true)
+                                if (hasMacd) setIsMacdCollapsed(true)
                             } else {
-                                setShowIndicators(true) // open panel to add indicators
+                                if (hasRsi)  setIsRsiCollapsed(false)
+                                if (hasMacd) setIsMacdCollapsed(false)
                             }
                         }}
                     />
@@ -723,6 +762,7 @@ export default function Simulator() {
                         <IndicatorsPanel
                             onClose={() => setShowIndicators(false)}
                             onAddIndicator={handleAddIndicator}
+                            onRemoveIndicator={handleRemoveIndicator}
                             activeIndicators={activeIndicators}
                         />
                     )}

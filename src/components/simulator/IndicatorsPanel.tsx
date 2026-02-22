@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, Search, Star, Code, Activity, BarChart3, Users, TrendingUp, Zap, LineChart } from 'lucide-react'
+import { X, Search, Star, Code, Activity, BarChart3, TrendingUp, Zap, LineChart, CheckCircle2 } from 'lucide-react'
 
 // Types
 interface Indicator {
@@ -16,6 +16,7 @@ interface Indicator {
 interface IndicatorsPanelProps {
     onClose: () => void
     onAddIndicator: (indicatorId: string) => void
+    onRemoveIndicator: (indicatorId: string) => void
     activeIndicators: string[]
 }
 
@@ -40,7 +41,7 @@ const INDICATORS_DB: Indicator[] = [
 
 type CategoryId = 'favorites' | 'scripts' | 'technical' | 'fundamental' | 'community'
 
-export default function IndicatorsPanel({ onClose, onAddIndicator, activeIndicators }: IndicatorsPanelProps) {
+export default function IndicatorsPanel({ onClose, onAddIndicator, onRemoveIndicator, activeIndicators }: IndicatorsPanelProps) {
     const [activeCategory, setActiveCategory] = useState<CategoryId>('technical')
     const [searchQuery, setSearchQuery] = useState('')
     const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
@@ -178,14 +179,17 @@ export default function IndicatorsPanel({ onClose, onAddIndicator, activeIndicat
                                 {filteredIndicators.map(ind => (
                                     <div
                                         key={ind.id}
-                                        onClick={() => onAddIndicator(ind.id)}
                                         className={`
-                                            group cursor-pointer rounded-lg border border-transparent transition-all
+                                            group rounded-lg border border-transparent transition-all
                                             ${activeIndicators.includes(ind.id) ? 'bg-[#2A2E39] border-primary/30' : 'hover:bg-[#2A2E39]'}
                                             ${viewMode === 'grid' ? 'p-4 bg-[#1E222D]' : 'p-3 flex items-center justify-between'}
                                         `}
                                     >
-                                        <div>
+                                        {/* Clickable name/description area — only adds when not yet active */}
+                                        <div
+                                            className={`flex-1 ${!activeIndicators.includes(ind.id) ? 'cursor-pointer' : 'cursor-default'}`}
+                                            onClick={() => { if (!activeIndicators.includes(ind.id)) onAddIndicator(ind.id) }}
+                                        >
                                             <div className="flex items-center gap-2">
                                                 <span className="font-semibold text-white text-base">{ind.name}</span>
                                                 {ind.isFavorite && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />}
@@ -194,14 +198,30 @@ export default function IndicatorsPanel({ onClose, onAddIndicator, activeIndicat
                                         </div>
 
                                         {viewMode === 'list' && (
-                                            <div className={`
-                                                px-3 py-1.5 rounded-md text-sm font-medium transition-colors
-                                                ${activeIndicators.includes(ind.id)
-                                                    ? 'bg-green-500/10 text-green-500'
-                                                    : 'bg-[#2A2E39] text-gray-400 group-hover:text-white group-hover:bg-primary group-hover:shadow-lg'}
-                                            `}>
-                                                {activeIndicators.includes(ind.id) ? 'Додано' : 'Додати'}
-                                            </div>
+                                            activeIndicators.includes(ind.id) ? (
+                                                /* Active indicator: green check + red remove button */
+                                                <div className="flex items-center gap-1.5 flex-shrink-0 ml-3">
+                                                    <span className="flex items-center gap-1 text-xs text-green-500 font-medium">
+                                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                                        Активний
+                                                    </span>
+                                                    <button
+                                                        onClick={e => { e.stopPropagation(); onRemoveIndicator(ind.id) }}
+                                                        title="Прибрати індикатор"
+                                                        className="ml-1 p-1.5 rounded-md text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                                    >
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                /* Inactive: Add button */
+                                                <button
+                                                    onClick={() => onAddIndicator(ind.id)}
+                                                    className="flex-shrink-0 ml-3 px-3 py-1.5 rounded-md text-sm font-medium transition-colors bg-[#2A2E39] text-gray-400 group-hover:text-white group-hover:bg-primary group-hover:shadow-lg"
+                                                >
+                                                    Додати
+                                                </button>
+                                            )
                                         )}
                                     </div>
                                 ))}
