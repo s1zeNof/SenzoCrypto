@@ -9,7 +9,7 @@ import MACDIndicator from '@/components/simulator/indicators/MACDIndicator'
 import MACDSettings from '@/components/simulator/indicators/MACDSettings'
 import ChartOverlays from '@/components/simulator/ChartOverlays'
 import BottomPanel from '@/components/simulator/BottomPanel'
-import { Layout, Settings, Layers, MousePointer2, Minus, BoxSelect, Type, TrendingUp, TrendingDown, X, Magnet, Trash2, ArrowRight, GitBranch, BarChart2, Triangle, MoveHorizontal } from 'lucide-react'
+import { Layout, Settings, Layers, MousePointer2, Minus, BoxSelect, Type, TrendingUp, TrendingDown, X, Magnet, Trash2, ArrowRight, GitBranch, BarChart2, Triangle, MoveHorizontal, ChevronDown, ChevronUp, Maximize2, ArrowUp } from 'lucide-react'
 import { IChartApi, ISeriesApi } from 'lightweight-charts'
 
 // --- Paper Trading Logic (Mini Hook) ---
@@ -230,9 +230,13 @@ export default function Simulator() {
     const [macdSettings, setMACDSettings] = useState({ fast: 12, slow: 26, signal: 9 })
     const [editingMACD, setEditingMACD] = useState(false)
 
-    // Indicator pane heights (resizable via drag handle)
-    const [rsiHeight, setRsiHeight] = useState(150)
-    const [macdHeight, setMacdHeight] = useState(150)
+    // Indicator pane heights + collapse state (resizable / collapsible)
+    const [rsiHeight,      setRsiHeight]      = useState(150)
+    const [macdHeight,     setMacdHeight]     = useState(150)
+    const [isRsiCollapsed, setIsRsiCollapsed] = useState(false)
+    const [isMacdCollapsed,setIsMacdCollapsed]= useState(false)
+    // Height of the always-visible bottom bar inside each pane (buttons row)
+    const PANE_BAR_H = 28
 
     const startIndicatorResize = useCallback((
         e: React.MouseEvent,
@@ -604,7 +608,16 @@ export default function Simulator() {
                         }}
 
                         isMagnetEnabled={isMagnetEnabled}
-                        onDoubleClick={() => setIsBottomPanelOpen(true)}
+                        onDoubleClick={() => {
+                            // Expand collapsed indicator panes (like TradingView double-click)
+                            const hasIndicators = activeIndicators.some(id => id === 'rsi' || id === 'macd')
+                            if (hasIndicators) {
+                                if (isRsiCollapsed)  setIsRsiCollapsed(false)
+                                if (isMacdCollapsed) setIsMacdCollapsed(false)
+                            } else {
+                                setShowIndicators(true) // open panel to add indicators
+                            }
+                        }}
                     />
 
                     {/* Drawing Overlay */}
@@ -651,50 +664,141 @@ export default function Simulator() {
                     />
                 </div>
 
-                {/* RSI Indicator Pane */}
-                {activeIndicators.includes('rsi') && (
-                    <div
-                        className="shrink-0 border-t border-border relative"
-                        style={{ height: rsiHeight }}
-                        onDoubleClick={() => setEditingRSI(true)}
-                    >
-                        {/* Resize handle — drag upward to expand, downward to shrink */}
-                        <div
-                            className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-10 group flex items-center justify-center"
-                            onMouseDown={e => startIndicatorResize(e, rsiHeight, setRsiHeight)}
-                        >
-                            <div className="w-8 h-0.5 rounded-full bg-border group-hover:bg-primary/60 transition-colors" />
-                        </div>
-                        <RSIIndicator
-                            data={chartData}
-                            settings={rsiSettings}
-                            onSettingsClick={() => setEditingRSI(true)}
-                        />
-                    </div>
-                )}
+                {/* ── Indicator Panes — rendered in activeIndicators order ──────── */}
+                {activeIndicators.map(id => {
+                    // ── RSI ──────────────────────────────────────────────────────────
+                    if (id === 'rsi') {
+                        const collapsed = isRsiCollapsed
+                        const paneH = collapsed ? PANE_BAR_H : rsiHeight
+                        return (
+                            <div key="rsi"
+                                className="shrink-0 border-t border-border relative"
+                                style={{ height: paneH }}
+                            >
+                                {/* Drag handle — only when expanded */}
+                                {!collapsed && (
+                                    <div
+                                        className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-10 group flex items-center justify-center"
+                                        onMouseDown={e => startIndicatorResize(e, rsiHeight, setRsiHeight)}
+                                    >
+                                        <div className="w-8 h-0.5 rounded-full bg-border group-hover:bg-primary/60 transition-colors" />
+                                    </div>
+                                )}
 
-                {/* MACD Indicator Pane */}
-                {activeIndicators.includes('macd') && (
-                    <div
-                        className="shrink-0 border-t border-border relative"
-                        style={{ height: macdHeight }}
-                        onDoubleClick={() => setEditingMACD(true)}
-                    >
-                        {/* Resize handle — drag upward to expand, downward to shrink */}
-                        <div
-                            className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-10 group flex items-center justify-center"
-                            onMouseDown={e => startIndicatorResize(e, macdHeight, setMacdHeight)}
-                        >
-                            <div className="w-8 h-0.5 rounded-full bg-border group-hover:bg-primary/60 transition-colors" />
-                        </div>
-                        <MACDIndicator
-                            data={chartData}
-                            settings={macdSettings}
-                            onClose={() => handleRemoveIndicator('macd')}
-                            onSettingsClick={() => setEditingMACD(true)}
-                        />
-                    </div>
-                )}
+                                {/* Chart — only when expanded */}
+                                {!collapsed && (
+                                    <RSIIndicator
+                                        data={chartData}
+                                        settings={rsiSettings}
+                                        height={rsiHeight - PANE_BAR_H}
+                                        onSettingsClick={() => setEditingRSI(true)}
+                                    />
+                                )}
+
+                                {/* Bottom bar — always visible */}
+                                <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-3 bg-surface/80 border-t border-border/40"
+                                    style={{ height: PANE_BAR_H }}>
+                                    <span className="text-xs text-gray-500 font-medium select-none">
+                                        RSI ({rsiSettings.period || 14})
+                                    </span>
+                                    <div className="flex items-center gap-0.5">
+                                        <button title="Видалити" onClick={() => handleRemoveIndicator('rsi')}
+                                            className="p-1 hover:bg-white/10 rounded text-gray-500 hover:text-red-400 transition-colors">
+                                            <Trash2 className="w-3 h-3" />
+                                        </button>
+                                        <button title={collapsed ? 'Розгорнути панель' : 'Згорнути панель'}
+                                            onClick={() => setIsRsiCollapsed(v => !v)}
+                                            className="p-1 hover:bg-white/10 rounded text-gray-500 hover:text-white transition-colors">
+                                            {collapsed ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                        </button>
+                                        <button title="Розгорнути на максимум"
+                                            onClick={() => { setIsRsiCollapsed(false); setRsiHeight(400) }}
+                                            className="p-1 hover:bg-white/10 rounded text-gray-500 hover:text-white transition-colors">
+                                            <Maximize2 className="w-3 h-3" />
+                                        </button>
+                                        <button title="Перемістити вгору"
+                                            onClick={() => setActiveIndicators(prev => {
+                                                const i = prev.indexOf('rsi')
+                                                if (i <= 0) return prev
+                                                const a = [...prev]; [a[i - 1], a[i]] = [a[i], a[i - 1]]; return a
+                                            })}
+                                            className="p-1 hover:bg-white/10 rounded text-gray-500 hover:text-white transition-colors">
+                                            <ArrowUp className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )
+                    }
+
+                    // ── MACD ─────────────────────────────────────────────────────────
+                    if (id === 'macd') {
+                        const collapsed = isMacdCollapsed
+                        const paneH = collapsed ? PANE_BAR_H : macdHeight
+                        return (
+                            <div key="macd"
+                                className="shrink-0 border-t border-border relative"
+                                style={{ height: paneH }}
+                            >
+                                {/* Drag handle — only when expanded */}
+                                {!collapsed && (
+                                    <div
+                                        className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-10 group flex items-center justify-center"
+                                        onMouseDown={e => startIndicatorResize(e, macdHeight, setMacdHeight)}
+                                    >
+                                        <div className="w-8 h-0.5 rounded-full bg-border group-hover:bg-primary/60 transition-colors" />
+                                    </div>
+                                )}
+
+                                {/* Chart — only when expanded */}
+                                {!collapsed && (
+                                    <MACDIndicator
+                                        data={chartData}
+                                        settings={macdSettings}
+                                        height={macdHeight - PANE_BAR_H}
+                                        onClose={() => handleRemoveIndicator('macd')}
+                                        onSettingsClick={() => setEditingMACD(true)}
+                                    />
+                                )}
+
+                                {/* Bottom bar — always visible */}
+                                <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-3 bg-surface/80 border-t border-border/40"
+                                    style={{ height: PANE_BAR_H }}>
+                                    <span className="text-xs text-gray-500 font-medium select-none">
+                                        MACD ({macdSettings.fast}, {macdSettings.slow}, {macdSettings.signal})
+                                    </span>
+                                    <div className="flex items-center gap-0.5">
+                                        <button title="Видалити" onClick={() => handleRemoveIndicator('macd')}
+                                            className="p-1 hover:bg-white/10 rounded text-gray-500 hover:text-red-400 transition-colors">
+                                            <Trash2 className="w-3 h-3" />
+                                        </button>
+                                        <button title={collapsed ? 'Розгорнути панель' : 'Згорнути панель'}
+                                            onClick={() => setIsMacdCollapsed(v => !v)}
+                                            className="p-1 hover:bg-white/10 rounded text-gray-500 hover:text-white transition-colors">
+                                            {collapsed ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                        </button>
+                                        <button title="Розгорнути на максимум"
+                                            onClick={() => { setIsMacdCollapsed(false); setMacdHeight(400) }}
+                                            className="p-1 hover:bg-white/10 rounded text-gray-500 hover:text-white transition-colors">
+                                            <Maximize2 className="w-3 h-3" />
+                                        </button>
+                                        <button title="Перемістити вгору"
+                                            onClick={() => setActiveIndicators(prev => {
+                                                const i = prev.indexOf('macd')
+                                                if (i <= 0) return prev
+                                                const a = [...prev]; [a[i - 1], a[i]] = [a[i], a[i - 1]]; return a
+                                            })}
+                                            className="p-1 hover:bg-white/10 rounded text-gray-500 hover:text-white transition-colors">
+                                            <ArrowUp className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )
+                    }
+
+                    return null
+                })}
 
                 {/* Bottom Panel */}
                 <BottomPanel
