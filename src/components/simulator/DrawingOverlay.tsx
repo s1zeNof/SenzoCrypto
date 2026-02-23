@@ -23,9 +23,18 @@ interface Drawing {
     locked?: boolean
     label?: string
     // ─── Position tool fields (long / short) ───────────────────────────────
-    stopLoss?:   number   // stop-loss price level
-    takeProfit?: number   // take-profit price level
-    quantity?:   number   // position size (units / lots)
+    stopLoss?:         number   // stop-loss price level
+    takeProfit?:       number   // take-profit price level
+    quantity?:         number   // position size (units / lots)
+    accountSize?:      number   // Розмір рахунку
+    risk?:             number   // Ризик %
+    leverage?:         number   // Кредитне плечо
+    stopColor?:        string   // Колір стоп-рівня
+    targetColor?:      string   // Колір цілі
+    textSize?:         number   // Розмір тексту
+    showPriceLabels?:  boolean  // Метки цін
+    alwaysShowValues?: boolean  // Завжди відображати значення
+    abbreviated?:      boolean  // Скорочені значення
 }
 
 interface DrawingOverlayProps {
@@ -99,11 +108,13 @@ export default function DrawingOverlay({
     })
 
     // Drag-specific refs (don't need to trigger renders during drag)
-    const isMouseDownRef   = useRef(false)
-    const isDraggingRef    = useRef(false)
-    const dragStartRef     = useRef<Point | null>(null)
-    const dragPointIdxRef  = useRef<number | null>(null)
-    const dragInitRef      = useRef(false) // prevents double-start
+    const isMouseDownRef          = useRef(false)
+    const isDraggingRef           = useRef(false)
+    const dragStartRef            = useRef<Point | null>(null)
+    const dragPointIdxRef         = useRef<number | null>(null)
+    const dragInitRef             = useRef(false) // prevents double-start
+    // For position tools: which line is being dragged
+    const draggingPositionPartRef = useRef<'entry' | 'tp' | 'sl' | null>(null)
 
     // Keyboard state as IMMEDIATE refs — updated synchronously in the keydown/keyup handler
     // so that mouse-move events fired before the next React render still see the correct value.
@@ -197,19 +208,33 @@ export default function DrawingOverlay({
             if (!sp) return point
             const li = chart.timeScale().coordinateToLogical(sp.x)
             if (li === null) return point
-            const cd = series.dataByIndex(Math.round(li)) as any
-            if (!cd?.open) return point
-            const ohlc = [cd.open, cd.high, cd.low, cd.close]
-            const closest = ohlc.reduce((p: number, c: number) => Math.abs(c - point.price) < Math.abs(p - point.price) ? c : p)
+            const roundedLi = Math.round(li)
+
+            // Check current candle AND its immediate neighbors so that wick tips
+            // (high / low) of an adjacent candle are reachable when the cursor is
+            // between two bars.
+            let bestPrice = point.price
+            let bestTime  = point.time
+            let bestDist  = Infinity
+
+            for (const offset of [-1, 0, 1]) {
+                const cd = series.dataByIndex(roundedLi + offset) as any
+                if (!cd?.open) continue
+                // OHLC: open + close = body, high + low = full wick tips
+                for (const lvl of [cd.open, cd.high, cd.low, cd.close]) {
+                    const dist = Math.abs(lvl - point.price)
+                    if (dist < bestDist) { bestDist = dist; bestPrice = lvl; bestTime = cd.time }
+                }
+            }
 
             if (S.current.isMagnetEnabled) {
-                // Strict mode (magnet ON): always snap to the nearest OHLC value
-                return { time: cd.time, price: closest }
+                // Strict mode (magnet ON): always snap to the nearest OHLC level
+                return { time: bestTime as Time, price: bestPrice }
             } else {
-                // Soft mode (magnet OFF): snap only when the cursor is within 8px of an OHLC line
-                const closestY = series.priceToCoordinate(closest)
+                // Soft mode (magnet OFF): snap only when within 8px of the snap level
+                const closestY = series.priceToCoordinate(bestPrice)
                 if (closestY !== null && Math.abs(closestY - sp.y) < 8) {
-                    return { time: cd.time, price: closest }
+                    return { time: bestTime as Time, price: bestPrice }
                 }
             }
         } catch { }
@@ -273,15 +298,17 @@ export default function DrawingOverlay({
                 }
                 case 'long':
                 case 'short': {
-                    if (spts.length >= 2) {
-                        const rx  = Math.min(spts[0].x, spts[1].x)
-                        const rw  = Math.abs(spts[0].x - spts[1].x)
-                        const ep  = d.points[0].price
-                        const slY = priceToScreenY((d as any).stopLoss   ?? ep) ?? spts[0].y
-                        const tpY = priceToScreenY((d as any).takeProfit ?? ep) ?? spts[0].y
-                        const ry  = Math.min(tpY, slY)
-                        const rh  = Math.abs(tpY - slY)
-                        if (mx >= rx && mx <= rx + rw && my >= ry && my <= ry + rh) dist = 0
+                    if (spts.length >= 1 || d.points.length >= 1) {
+                        const ep     = d.points[0].price
+                        const slP    = (d as any).stopLoss   ?? ep
+                        const tpP    = (d as any).takeProfit ?? ep
+                        const entryY = priceToScreenY(ep)  ?? -9999
+                        const slY    = priceToScreenY(slP) ?? -9999
+                        const tpY    = priceToScreenY(tpP) ?? -9999
+                        const zoneTop = Math.min(tpY, slY)
+                        const zoneH   = Math.abs(tpY - slY)
+                        if (my >= zoneTop - 4 && my <= zoneTop + zoneH + 4) dist = 0
+                        else dist = Math.min(Math.abs(my - entryY), Math.abs(my - slY), Math.abs(my - tpY))
                     }
                     break
                 }
@@ -371,6 +398,7 @@ export default function DrawingOverlay({
             isDraggingRef.current = false
             dragStartRef.current = null
             dragPointIdxRef.current = null
+            draggingPositionPartRef.current = null
         }
         window.addEventListener('mousedown', onDown)
         window.addEventListener('mouseup', onUp)
@@ -433,6 +461,29 @@ export default function DrawingOverlay({
             return
         }
 
+        // ── 1b. Handle dragging a position line (entry / tp / sl) ──
+        if (isDraggingRef.current && draggingPositionPartRef.current && selectedDrawingId && onDrawingsChange) {
+            const priceDelta = point.price - (dragStartRef.current?.price ?? point.price)
+            dragStartRef.current = point
+            const part = draggingPositionPartRef.current
+            onDrawingsChange(drawings.map(d => {
+                if (d.id !== selectedDrawingId) return d
+                if (d.type !== 'long' && d.type !== 'short') return d
+                if (part === 'entry') {
+                    return {
+                        ...d,
+                        points:     d.points.map(p => ({ ...p, price: p.price + priceDelta })),
+                        stopLoss:   ((d as any).stopLoss   ?? d.points[0].price) + priceDelta,
+                        takeProfit: ((d as any).takeProfit ?? d.points[0].price) + priceDelta,
+                    }
+                }
+                if (part === 'tp')  return { ...d, takeProfit: ((d as any).takeProfit ?? d.points[0].price) + priceDelta }
+                if (part === 'sl')  return { ...d, stopLoss:   ((d as any).stopLoss   ?? d.points[0].price) + priceDelta }
+                return d
+            }))
+            return
+        }
+
         // ── 2. Handle dragging whole drawing ──
         if (isDraggingRef.current && dragStartRef.current && selectedDrawingId && onDrawingsChange && chart) {
             const prevPoint = dragStartRef.current
@@ -476,20 +527,37 @@ export default function DrawingOverlay({
                 dragInitRef.current = true
                 const selDrawing = drawings.find(d => d.id === foundId)
                 if (selDrawing && !selDrawing.locked && param.point) {
-                    // Check if near a handle point (endpoint of drawing)
-                    let nearHandle = -1
-                    for (let i = 0; i < selDrawing.points.length; i++) {
-                        const sp = pointToScreen(selDrawing.points[i])
-                        if (sp && distPt(mx, my, sp.x, sp.y) < 12) { nearHandle = i; break }
-                    }
-                    if (nearHandle !== -1) {
-                        dragPointIdxRef.current = nearHandle
+                    if (selDrawing.type === 'long' || selDrawing.type === 'short') {
+                        // Position tool: determine which line is closest to the cursor
+                        const entryY = priceToScreenY(selDrawing.points[0].price) ?? -9999
+                        const tpY    = priceToScreenY((selDrawing as any).takeProfit ?? selDrawing.points[0].price) ?? -9999
+                        const slY    = priceToScreenY((selDrawing as any).stopLoss   ?? selDrawing.points[0].price) ?? -9999
+                        const dE = Math.abs(my - entryY)
+                        const dT = Math.abs(my - tpY)
+                        const dS = Math.abs(my - slY)
+                        const minD = Math.min(dE, dT, dS)
+                        if (minD < 20) {
+                            draggingPositionPartRef.current =
+                                dE <= dT && dE <= dS ? 'entry' : dT <= dS ? 'tp' : 'sl'
+                            dragStartRef.current = point
+                            isDraggingRef.current = true
+                            chart?.applyOptions({ handleScroll: { pressedMouseMove: false } })
+                        }
                     } else {
-                        dragStartRef.current = point
+                        // Regular drawing: check if near a handle point (endpoint)
+                        let nearHandle = -1
+                        for (let i = 0; i < selDrawing.points.length; i++) {
+                            const sp = pointToScreen(selDrawing.points[i])
+                            if (sp && distPt(mx, my, sp.x, sp.y) < 12) { nearHandle = i; break }
+                        }
+                        if (nearHandle !== -1) {
+                            dragPointIdxRef.current = nearHandle
+                        } else {
+                            dragStartRef.current = point
+                        }
+                        isDraggingRef.current = true
+                        chart?.applyOptions({ handleScroll: { pressedMouseMove: false } })
                     }
-                    isDraggingRef.current = true
-                    // Prevent chart from panning while a drawing is being dragged
-                    chart?.applyOptions({ handleScroll: { pressedMouseMove: false } })
                 }
             }
         }
@@ -523,7 +591,7 @@ export default function DrawingOverlay({
                     onToolComplete()
                     return
                 }
-                // ── Long / Short position tool: auto-calc SL & TP from entry ──
+                // ── Long / Short position tool: 1-click placement ──
                 if (activeTool === 'long' || activeTool === 'short') {
                     const entry  = point.price
                     const isLong = activeTool === 'long'
@@ -536,8 +604,14 @@ export default function DrawingOverlay({
                         stopLoss:   isLong ? entry * 0.98 : entry * 1.02,
                         takeProfit: isLong ? entry * 1.04 : entry * 0.96,
                         quantity:   1,
+                        stopColor:   '#EF5350',
+                        targetColor: '#26A69A',
+                        showPriceLabels:  true,
+                        alwaysShowValues: false,
+                        abbreviated:      false,
                     }
-                    setCurrentDrawing(nd)
+                    onDrawingsChange?.([...drawings, nd])
+                    onToolComplete()
                     return
                 }
                 setCurrentDrawing({ id: crypto.randomUUID(), type: activeTool, points: [point], color: '#2962FF', lineWidth: 2, lineStyle: 'solid' })
@@ -846,72 +920,114 @@ export default function DrawingOverlay({
 
             case 'long':
             case 'short': {
-                if (screenPoints.length < 2)
-                    return screenPoints[0] ? <circle key={d.id} cx={screenPoints[0].x} cy={screenPoints[0].y} r={4} fill={style.stroke} /> : null
-
-                const x0         = Math.min(screenPoints[0].x, screenPoints[1].x)
-                const x1         = Math.max(screenPoints[0].x, screenPoints[1].x)
-                const w          = x1 - x0
-                const isLong     = d.type === 'long'
-                const entryPrice = pointsToRender[0].price
-                const slPrice    = (d as any).stopLoss   ?? (isLong ? entryPrice * 0.98 : entryPrice * 1.02)
-                const tpPrice    = (d as any).takeProfit ?? (isLong ? entryPrice * 1.04 : entryPrice * 0.96)
-                const entryY     = priceToScreenY(entryPrice)
-                const slY        = priceToScreenY(slPrice)
-                const tpY        = priceToScreenY(tpPrice)
+                if (!d.points?.length) return null
+                const chartW      = chart?.timeScale().width() ?? 1200
+                const isLong      = d.type === 'long'
+                const entryPrice  = d.points[0].price
+                const stopClr     = (d as any).stopColor   || '#EF5350'
+                const targetClr   = (d as any).targetColor || '#26A69A'
+                const entryClr    = isLong ? targetClr : stopClr
+                const slPrice     = (d as any).stopLoss   ?? (isLong ? entryPrice * 0.98 : entryPrice * 1.02)
+                const tpPrice     = (d as any).takeProfit ?? (isLong ? entryPrice * 1.04 : entryPrice * 0.96)
+                const entryY      = priceToScreenY(entryPrice)
+                const slY         = priceToScreenY(slPrice)
+                const tpY         = priceToScreenY(tpPrice)
                 if (entryY === null || slY === null || tpY === null) return null
 
-                const slZoneTop  = Math.min(entryY, slY)
-                const slZoneH    = Math.abs(entryY - slY)
-                const tpZoneTop  = Math.min(entryY, tpY)
-                const tpZoneH    = Math.abs(entryY - tpY)
+                const slZoneTop   = Math.min(entryY, slY)
+                const slZoneH     = Math.abs(entryY - slY)
+                const tpZoneTop   = Math.min(entryY, tpY)
+                const tpZoneH     = Math.abs(entryY - tpY)
 
-                const risk   = Math.abs(entryPrice - slPrice)
-                const reward = Math.abs(tpPrice - entryPrice)
-                const rr     = risk > 0 ? (reward / risk).toFixed(2) : '∞'
-                const slPct  = ((slPrice - entryPrice) / entryPrice * 100).toFixed(2)
-                const tpPct  = ((tpPrice - entryPrice) / entryPrice * 100).toFixed(2)
-                const entryColor = isLong ? '#26A69A' : '#EF5350'
+                const risk        = Math.abs(entryPrice - slPrice)
+                const reward      = Math.abs(tpPrice - entryPrice)
+                const rr          = risk > 0 ? (reward / risk).toFixed(2) : '∞'
+                const slPct       = ((slPrice - entryPrice) / entryPrice * 100).toFixed(2)
+                const tpPct       = ((tpPrice - entryPrice) / entryPrice * 100).toFixed(2)
+                const showLabels  = (d as any).showPriceLabels !== false
+                const abbreviated = (d as any).abbreviated === true
+                const fmt = (p: number) => abbreviated
+                    ? (p >= 1000 ? (p / 1000).toFixed(1) + 'k' : p.toFixed(2))
+                    : p.toLocaleString(undefined, { maximumFractionDigits: 4 })
+
+                // Right-side pill label width
+                const pillW = 118
 
                 return (
                     <g key={d.id || 'preview'} filter={glowFilter} className="pointer-events-none">
-                        {/* SL zone — always red */}
-                        <rect x={x0} y={slZoneTop} width={w} height={slZoneH}
-                            fill="#EF5350" fillOpacity={isSelected ? 0.22 : 0.13}
-                            stroke="#EF5350" strokeWidth={0.5} />
-                        {/* TP zone — always green */}
-                        <rect x={x0} y={tpZoneTop} width={w} height={tpZoneH}
-                            fill="#26A69A" fillOpacity={isSelected ? 0.22 : 0.13}
-                            stroke="#26A69A" strokeWidth={0.5} />
+                        {/* Coloured zones */}
+                        <rect x={0} y={slZoneTop} width={chartW} height={slZoneH}
+                            fill={stopClr} fillOpacity={isSelected ? 0.2 : 0.12} />
+                        <rect x={0} y={tpZoneTop} width={chartW} height={tpZoneH}
+                            fill={targetClr} fillOpacity={isSelected ? 0.2 : 0.12} />
+
+                        {/* TP line */}
+                        <line x1={0} y1={tpY} x2={chartW} y2={tpY}
+                            stroke={targetClr} strokeWidth={1.5} strokeDasharray="6,3" />
                         {/* Entry line */}
-                        <line x1={x0} y1={entryY} x2={x1} y2={entryY}
-                            stroke={entryColor} strokeWidth={2} />
-                        {/* SL line (dashed) */}
-                        <line x1={x0} y1={slY} x2={x1} y2={slY}
-                            stroke="#EF5350" strokeWidth={1} strokeDasharray="5,3" />
-                        {/* TP line (dashed) */}
-                        <line x1={x0} y1={tpY} x2={x1} y2={tpY}
-                            stroke="#26A69A" strokeWidth={1} strokeDasharray="5,3" />
-                        {/* Price labels on right edge */}
-                        <text x={x1 + 5} y={entryY + 4} fill={entryColor} fontSize={10} fontFamily="monospace">
-                            {entryPrice.toLocaleString(undefined, { maximumFractionDigits: 4 })}
-                        </text>
-                        <text x={x1 + 5} y={tpY + 4} fill="#26A69A" fontSize={10} fontFamily="monospace">
-                            {Number(tpPct) >= 0 ? '+' : ''}{tpPct}%
-                        </text>
-                        <text x={x1 + 5} y={slY + 4} fill="#EF5350" fontSize={10} fontFamily="monospace">
-                            {Number(slPct) >= 0 ? '+' : ''}{slPct}%
-                        </text>
-                        {/* R:R label centred in TP zone */}
-                        {tpZoneH > 16 && w > 50 && (
-                            <text x={x0 + w / 2} y={tpZoneTop + tpZoneH / 2 + 4}
-                                textAnchor="middle" fill="#26A69A" fontSize={11}
-                                fontFamily="monospace" fontWeight="600">
-                                {isLong ? '▲' : '▼'} R:R {rr}
+                        <line x1={0} y1={entryY} x2={chartW} y2={entryY}
+                            stroke={entryClr} strokeWidth={2} />
+                        {/* SL line */}
+                        <line x1={0} y1={slY} x2={chartW} y2={slY}
+                            stroke={stopClr} strokeWidth={1.5} strokeDasharray="6,3" />
+
+                        {/* Zone labels (left side) */}
+                        {tpZoneH > 22 && (
+                            <text x={8} y={tpZoneTop + tpZoneH / 2 + 4}
+                                fill={targetClr} fontSize={10} fontFamily="monospace" fontWeight="600">
+                                {isLong ? '▲' : '▼'} Ціль {Number(tpPct) >= 0 ? '+' : ''}{tpPct}%  R:R {rr}
                             </text>
                         )}
-                        {/* Control handles */}
-                        {isActive && screenPoints.map((p, i) => <Handle key={i} cx={p.x} cy={p.y} idx={i} />)}
+                        {slZoneH > 22 && (
+                            <text x={8} y={slZoneTop + slZoneH / 2 + 4}
+                                fill={stopClr} fontSize={10} fontFamily="monospace">
+                                {isLong ? '▼' : '▲'} Стоп {slPct}%
+                            </text>
+                        )}
+
+                        {/* Right-side pill labels */}
+                        {showLabels && (
+                            <>
+                                {/* TP pill */}
+                                <rect x={chartW - pillW} y={tpY - 11} width={pillW} height={22}
+                                    fill={targetClr} fillOpacity={0.88} rx={3} />
+                                <text x={chartW - pillW / 2} y={tpY + 4}
+                                    textAnchor="middle" fill="white" fontSize={10}
+                                    fontFamily="monospace" fontWeight="600">
+                                    {fmt(tpPrice)}  {Number(tpPct) >= 0 ? '+' : ''}{tpPct}%
+                                </text>
+
+                                {/* Entry pill */}
+                                <rect x={chartW - 88} y={entryY - 11} width={88} height={22}
+                                    fill={entryClr} fillOpacity={0.92} rx={3} />
+                                <text x={chartW - 44} y={entryY + 4}
+                                    textAnchor="middle" fill="white" fontSize={10}
+                                    fontFamily="monospace" fontWeight="600">
+                                    {fmt(entryPrice)}
+                                </text>
+
+                                {/* SL pill */}
+                                <rect x={chartW - pillW} y={slY - 11} width={pillW} height={22}
+                                    fill={stopClr} fillOpacity={0.88} rx={3} />
+                                <text x={chartW - pillW / 2} y={slY + 4}
+                                    textAnchor="middle" fill="white" fontSize={10}
+                                    fontFamily="monospace" fontWeight="600">
+                                    {fmt(slPrice)}  {slPct}%
+                                </text>
+                            </>
+                        )}
+
+                        {/* Drag handles on each line (shown when hovered / selected) */}
+                        {isActive && (
+                            <>
+                                <circle cx={10}          cy={entryY} r={5} fill={entryClr}  stroke="white" strokeWidth={1.5} />
+                                <circle cx={chartW - 10} cy={entryY} r={5} fill={entryClr}  stroke="white" strokeWidth={1.5} />
+                                <circle cx={10}          cy={tpY}    r={5} fill={targetClr} stroke="white" strokeWidth={1.5} />
+                                <circle cx={chartW - 10} cy={tpY}    r={5} fill={targetClr} stroke="white" strokeWidth={1.5} />
+                                <circle cx={10}          cy={slY}    r={5} fill={stopClr}   stroke="white" strokeWidth={1.5} />
+                                <circle cx={chartW - 10} cy={slY}    r={5} fill={stopClr}   stroke="white" strokeWidth={1.5} />
+                            </>
+                        )}
                     </g>
                 )
             }
@@ -978,6 +1094,21 @@ export default function DrawingOverlay({
             <svg className="w-full h-full pointer-events-none">
                 {drawings.map(d => renderDrawing(d))}
                 {currentDrawing && renderDrawing(currentDrawing as Drawing, true)}
+                {/* Ghost preview when long/short tool is active and hovering */}
+                {(activeTool === 'long' || activeTool === 'short') && mousePos && !currentDrawing && (() => {
+                    const isLong  = activeTool === 'long'
+                    const entry   = mousePos.price
+                    const ghost: Drawing = {
+                        id: '__pos_ghost__', type: activeTool,
+                        points: [mousePos], color: isLong ? '#26A69A' : '#EF5350',
+                        lineWidth: 1, lineStyle: 'solid',
+                        stopLoss:    isLong ? entry * 0.98 : entry * 1.02,
+                        takeProfit:  isLong ? entry * 1.04 : entry * 0.96,
+                        quantity: 1, stopColor: '#EF5350', targetColor: '#26A69A',
+                        showPriceLabels: true,
+                    }
+                    return <g opacity={0.55}>{renderDrawing(ghost)}</g>
+                })()}
                 {renderReplayCursor()}
             </svg>
             {/* Floating toolbar is HTML, so pointer-events work normally */}

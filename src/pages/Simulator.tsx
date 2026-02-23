@@ -710,6 +710,8 @@ export default function Simulator() {
 
                         isMagnetEnabled={isMagnetEnabled}
                         onDoubleClick={() => {
+                            // Don't toggle indicators when the user is mid-drawing
+                            if (activeTool !== 'cursor') return
                             const hasRsi  = activeIndicators.includes('rsi')
                             const hasMacd = activeIndicators.includes('macd')
                             const anyActive = hasRsi || hasMacd
